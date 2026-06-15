@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QSpinBox, QDoubleSpinBox, QPushButton, QMessageBox
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QSpinBox, QDoubleSpinBox, QPushButton
 from utils.config import SimulationConfig
 
 class InputWidget(QWidget):
@@ -6,64 +6,61 @@ class InputWidget(QWidget):
         super().__init__()
         self.layout = QVBoxLayout()
 
+        # Параметры барабана
+        self.drum_radius_label = QLabel("Радиус барабана (м)")
+        self.drum_radius_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.drum_radius_label)
+        self.layout.addWidget(self.drum_radius_spinbox)
+
+        self.drum_omega_label = QLabel("Угловая скорость барабана (рад/с)")
+        self.drum_omega_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.drum_omega_label)
+        self.layout.addWidget(self.drum_omega_spinbox)
+
+        # Характеристики материала
+        self.particle_radius_label = QLabel("Радиус частицы (м)")
+        self.particle_radius_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.particle_radius_label)
+        self.layout.addWidget(self.particle_radius_spinbox)
+
+        self.particle_density_label = QLabel("Плотность частицы (кг/м³)")
+        self.particle_density_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.particle_density_label)
+        self.layout.addWidget(self.particle_density_spinbox)
+
+        # Свойства модели
+        self.num_particles_label = QLabel("Количество частиц")
         self.num_particles_spinbox = QSpinBox()
-        self.particle_radius_doublebox = QDoubleSpinBox()
-        self.particle_density_doublebox = QDoubleSpinBox()
-        self.kn_doublebox = QDoubleSpinBox()
-        self.restitution_doublebox = QDoubleSpinBox()
-        self.friction_static_doublebox = QDoubleSpinBox()
-        self.friction_dynamic_doublebox = QDoubleSpinBox()
-        self.rolling_friction_doublebox = QDoubleSpinBox()
-        self.drum_radius_doublebox = QDoubleSpinBox()
-        self.drum_omega_doublebox = QDoubleSpinBox()
-        self.dt_doublebox = QDoubleSpinBox()
-        self.total_time_doublebox = QDoubleSpinBox()
+        self.layout.addWidget(self.num_particles_label)
+        self.layout.addWidget(self.num_particles_spinbox)
 
-        for label, widget in [
-            ("Количество частиц (шт)", self.num_particles_spinbox),
-            ("Радиус частицы (м)", self.particle_radius_doublebox),
-            ("Плотность частицы (кг/м³)", self.particle_density_doublebox),
-            ("Нормальная жесткость (kn) (Н/м)", self.kn_doublebox),
-            ("Коэффициент восстановления", self.restitution_doublebox),
-            ("Статический коэффициент трения", self.friction_static_doublebox),
-            ("Динамический коэффициент трения", self.friction_dynamic_doublebox),
-            ("Коэффициент сопротивления качению", self.rolling_friction_doublebox),
-            ("Радиус барабана (м)", self.drum_radius_doublebox),
-            ("Угловая скорость барабана (рад/с)", self.drum_omega_doublebox),
-            ("Шаг по времени (dt) (с)", self.dt_doublebox),
-            ("Общее время симуляции (с)", self.total_time_doublebox)
-        ]:
-            label_widget = QLabel(label)
-            label_widget.setBuddy(widget)
-            self.layout.addWidget(label_widget)
-            self.layout.addWidget(widget)
+        # Коэффициенты взаимодействия
+        self.kn_label = QLabel("Нормальная жесткость (kn) (Н/м)")
+        self.kn_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.kn_label)
+        self.layout.addWidget(self.kn_spinbox)
 
-        self.num_particles_spinbox.setValue(100)
-        self.particle_radius_doublebox.setValue(0.02)
-        self.particle_density_doublebox.setValue(2500)
-        self.kn_doublebox.setValue(1e5)
-        self.restitution_doublebox.setValue(0.9)
-        self.friction_static_doublebox.setValue(0.5)
-        self.friction_dynamic_doublebox.setValue(0.4)
-        self.rolling_friction_doublebox.setValue(0.01)
-        self.drum_radius_doublebox.setValue(0.5)
-        self.drum_omega_doublebox.setValue(2.0)
-        self.dt_doublebox.setValue(1e-5)
-        self.total_time_doublebox.setValue(5.0)
+        self.restitution_label = QLabel("Коэффициент восстановления")
+        self.restitution_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.restitution_label)
+        self.layout.addWidget(self.restitution_spinbox)
 
-        self.num_particles_spinbox.setRange(1, 10000)
-        self.particle_radius_doublebox.setRange(0.001, 1.0)
-        self.particle_density_doublebox.setRange(100, 10000)
-        self.kn_doublebox.setRange(1000, 10000000)
-        self.restitution_doublebox.setRange(0.0, 1.0)
-        self.friction_static_doublebox.setRange(0.0, 2.0)
-        self.friction_dynamic_doublebox.setRange(0.0, 2.0)
-        self.rolling_friction_doublebox.setRange(0.0, 0.5)
-        self.drum_radius_doublebox.setRange(0.1, 5.0)
-        self.drum_omega_doublebox.setRange(0.1, 20.0)
-        self.dt_doublebox.setRange(1e-8, 1e-2)
-        self.total_time_doublebox.setRange(0.01, 100.0)
+        self.friction_static_label = QLabel("Статический коэффициент трения")
+        self.friction_static_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.friction_static_label)
+        self.layout.addWidget(self.friction_static_spinbox)
 
+        self.friction_dynamic_label = QLabel("Динамический коэффициент трения")
+        self.friction_dynamic_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.friction_dynamic_label)
+        self.layout.addWidget(self.friction_dynamic_spinbox)
+
+        self.rolling_friction_label = QLabel("Коэффициент сопротивления качению")
+        self.rolling_friction_spinbox = QDoubleSpinBox()
+        self.layout.addWidget(self.rolling_friction_label)
+        self.layout.addWidget(self.rolling_friction_spinbox)
+
+        # Кнопка применения настроек
         self.apply_button = QPushButton("Применить")
         self.layout.addWidget(self.apply_button)
 
@@ -72,15 +69,15 @@ class InputWidget(QWidget):
     def get_config(self):
         return SimulationConfig(
             num_particles=int(self.num_particles_spinbox.value()),
-            particle_radius=float(self.particle_radius_doublebox.value()),
-            particle_density=float(self.particle_density_doublebox.value()),
-            kn=float(self.kn_doublebox.value()),
-            restitution=float(self.restitution_doublebox.value()),
-            friction_static=float(self.friction_static_doublebox.value()),
-            friction_dynamic=float(self.friction_dynamic_doublebox.value()),
-            rolling_friction=float(self.rolling_friction_doublebox.value()),
-            drum_radius=float(self.drum_radius_doublebox.value()),
-            drum_omega=float(self.drum_omega_doublebox.value()),
-            dt=float(self.dt_doublebox.value()),
-            total_time=float(self.total_time_doublebox.value())
+            particle_radius=float(self.particle_radius_spinbox.value()),
+            particle_density=float(self.particle_density_spinbox.value()),
+            kn=float(self.kn_spinbox.value()),
+            restitution=float(self.restitution_spinbox.value()),
+            friction_static=float(self.friction_static_spinbox.value()),
+            friction_dynamic=float(self.friction_dynamic_spinbox.value()),
+            rolling_friction=float(self.rolling_friction_spinbox.value()),
+            drum_radius=float(self.drum_radius_spinbox.value()),
+            drum_omega=float(self.drum_omega_spinbox.value()),
+            dt=1e-5,  # Шаг по времени фиксированный
+            total_time=5.0  # Общее время симуляции фиксированное
         )
