@@ -1,8 +1,10 @@
+# path/to/filename.js
 from PyQt5.QtCore import QThread, pyqtSignal
 from dem.simulation import Simulation
 
 class SimulationThread(QThread):
     progress = pyqtSignal(int)
+    frame_ready = pyqtSignal(list)
     finished = pyqtSignal(object)
 
     def __init__(self, simulation=None):

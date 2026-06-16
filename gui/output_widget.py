@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QLabel, QTextEdit
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QLabel
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 

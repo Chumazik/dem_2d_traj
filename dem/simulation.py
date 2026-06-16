@@ -32,7 +32,6 @@ class Simulation:
         self.initialize_boundaries()
 
     def initialize_particles(self):
-        # Initialize particles inside the drum without overlap
         for i in range(self.config.num_particles):
             angle = 2 * np.pi * i / self.config.num_particles
             x = self.config.drum_radius * np.cos(angle)
@@ -47,9 +46,7 @@ class Simulation:
             self.particles.append(particle)
 
     def initialize_boundaries(self):
-        # Initialize the drum boundary
-        self.boundaries.append(WallCircle(center=(0, 0), radius=self.config.drum_radius,
-                                         omega=self.config.drum_omega))
+        self.boundaries.append(WallCircle(center=(0, 0), radius=self.config.drum_radius, omega=self.config.drum_omega))
 
     def step(self):
         velocity_verlet_step(self.particles, self.config.dt, self.contact_model, self.boundaries)
