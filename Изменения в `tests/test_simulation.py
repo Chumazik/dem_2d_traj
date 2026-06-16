@@ -1,4 +1,3 @@
-# path/to/filename.js
 import unittest
 from dem.simulation import Simulation, SimulationConfig
 

@@ -1,4 +1,3 @@
-# path/to/filename.js
 import sys
 from PyQt5.QtWidgets import QMainWindow, QSplitter, QApplication, QMenuBar, QMenu, QAction, QMessageBox, QToolBar, QStatusBar
 from PyQt5.QtCore import Qt
