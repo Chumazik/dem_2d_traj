@@ -1,4 +1,14 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QSpinBox, QDoubleSpinBox, QPushButton, QLabel                                                                      
+from PyQt5.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QFormLayout,
+    QHBoxLayout,
+    QSpinBox,
+    QDoubleSpinBox,
+    QPushButton,
+    QLabel,
+)
+from utils.config import SimulationConfig
                                                                                                                                                                                   
                                                                                                                                                                                   
                                                                                                                                                                                   
@@ -104,37 +114,43 @@ class InputWidget(QWidget):
                                                                                                                                                                                   
                                                                                                                                                                                   
                                                                                                                                                                                   
-    def apply_config(self):                                                                                                                                                       
-                                                                                                                                                                                  
-        config = {                                                                                                                                                                
-                                                                                                                                                                                  
-            "num_particles": self.num_particles_spinbox.value(),                                                                                                                  
-                                                                                                                                                                                  
-            "particle_radius": self.particle_radius_doublespinbox.value(),                                                                                                        
-                                                                                                                                                                                  
-            "particle_density": self.particle_density_doublespinbox.value(),                                                                                                      
-                                                                                                                                                                                  
-            "kn": self.kn_doublespinbox.value(),                                                                                                                                  
-                                                                                                                                                                                  
-            "restitution_coeff": self.restitution_doublespinbox.value(),                                                                                                          
-                                                                                                                                                                                  
-            "friction_static": self.friction_static_doublespinbox.value(),                                                                                                        
-                                                                                                                                                                                  
-            "friction_dynamic": self.friction_dynamic_doublespinbox.value(),                                                                                                      
-                                                                                                                                                                                  
-            "rolling_friction_coeff": self.rolling_friction_doublespinbox.value(),                                                                                                
-                                                                                                                                                                                  
-            "drum_radius": self.drum_radius_doublespinbox.value(),                                                                                                                
-                                                                                                                                                                                  
-            "drum_omega": self.drum_omega_doublespinbox.value(),                                                                                                                  
-                                                                                                                                                                                  
-            "dt": self.dt_doublespinbox.value(),                                                                                                                                  
-                                                                                                                                                                                  
-            "total_time": self.total_time_doublespinbox.value()                                                                                                                   
-                                                                                                                                                                                  
-        }                                                                                                                                                                         
-                                                                                                                                                                                  
-        return config                                                                                                                                                             
+    def apply_config(self):
+        """Return a plain dictionary of the current parameters.
+        This method is kept for backward compatibility with any external code that may have used it.
+        """
+        return {
+            "num_particles": self.num_particles_spinbox.value(),
+            "particle_radius": self.particle_radius_doublespinbox.value(),
+            "particle_density": self.particle_density_doublespinbox.value(),
+            "kn": self.kn_doublespinbox.value(),
+            "restitution_coeff": self.restitution_doublespinbox.value(),
+            "friction_static": self.friction_static_doublespinbox.value(),
+            "friction_dynamic": self.friction_dynamic_doublespinbox.value(),
+            "rolling_friction_coeff": self.rolling_friction_doublespinbox.value(),
+            "drum_radius": self.drum_radius_doublespinbox.value(),
+            "drum_omega": self.drum_omega_doublespinbox.value(),
+            "dt": self.dt_doublespinbox.value(),
+            "total_time": self.total_time_doublespinbox.value(),
+        }
+
+    def get_config(self) -> SimulationConfig:
+        """Legacy method expected by ``MainWindow`` – returns a ``SimulationConfig`` instance.
+        It pulls values from the current widgets and constructs the dataclass.
+        """
+        return SimulationConfig(
+            num_particles=int(self.num_particles_spinbox.value()),
+            particle_radius=float(self.particle_radius_doublespinbox.value()),
+            particle_density=float(self.particle_density_doublespinbox.value()),
+            kn=float(self.kn_doublespinbox.value()),
+            restitution=float(self.restitution_doublespinbox.value()),
+            friction_static=float(self.friction_static_doublespinbox.value()),
+            friction_dynamic=float(self.friction_dynamic_doublespinbox.value()),
+            rolling_friction=float(self.rolling_friction_doublespinbox.value()),
+            drum_radius=float(self.drum_radius_doublespinbox.value()),
+            drum_omega=float(self.drum_omega_doublespinbox.value()),
+            dt=float(self.dt_doublespinbox.value()),
+            total_time=float(self.total_time_doublespinbox.value()),
+        )
                                                                                                                                                                                   
                                                                                                                                                                                   
                                                                                                                                                                                   
