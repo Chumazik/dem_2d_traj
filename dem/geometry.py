@@ -1,95 +1,63 @@
 import numpy as np
 
-
-
 class Boundary:
-
+    """Базовый класс границы."""
     def detect_collision(self, particle):
-
-        raise NotImplementedError("Subclasses should implement this method.")
-
-
+        raise NotImplementedError("Subclasses must implement detect_collision.")
 
 class WallLine(Boundary):
-
+    """Прямая стенка, ограничивающая область с внутренней стороны против нормали."""
     def __init__(self, point, normal):
-
-        self.point = np.array(point)
-
-        self.normal = np.array(normal) / np.linalg.norm(normal)
-
-
+        self.point = np.array(point, dtype=float)
+        self.normal = np.array(normal, dtype=float)
+        self.normal /= np.linalg.norm(self.normal)
 
     def detect_collision(self, particle):
-
-        # Calculate distance from particle center to the line
-
+        # Расстояние от центра частицы до линии (положительно – в сторону нормали)
         dist = np.dot(particle.pos - self.point, self.normal)
 
         if dist > 0:
+            return None  # нет контакта
 
-            return None
-
-
-
-        overlap = particle.radius + dist
-
+        overlap = particle.radius - dist
         contact_point = particle.pos - overlap * self.normal
-
         normal_unit_vector = -self.normal
-
         overlap_rate = np.dot(particle.vel, self.normal)
-
-        tangential_velocity = particle.vel - (np.dot(particle.vel, self.normal) * self.normal)
-
-
+        tangential_velocity = particle.vel - overlap_rate * self.normal
 
         return overlap, contact_point, normal_unit_vector, overlap_rate, tangential_velocity
-
-
 
 class WallCircle(Boundary):
-
+    """Вращающийся барабан (окружность)."""
     def __init__(self, center, radius, omega=0.0):
-
-        self.center = np.array(center)
-
+        self.center = np.array(center, dtype=float)
         self.radius = radius
-
-        self.omega = omega
-
-        self.applied_torque = 0.0
-
-
+        self.omega = omega                # угловая скорость барабана
+        self.applied_torque = 0.0         # реактивный момент от частиц
 
     def detect_collision(self, particle):
+        # Вектор от центра барабана к центру частицы
+        vec = particle.pos - self.center
+        dist = np.linalg.norm(vec)
 
-        dist_to_center = np.linalg.norm(particle.pos - self.center)
+        if dist > self.radius + particle.radius:
+            return None  # нет контакта
 
-        if dist_to_center > self.radius + particle.radius:
-
-            return None
-
-
-
-        overlap = (self.radius + particle.radius) - dist_to_center
-
-        contact_point = self.center + (particle.radius / dist_to_center) * (particle.pos - self.center)
-
+        overlap = self.radius + particle.radius - dist
+        # Точка контакта на внутренней поверхности барабана
+        contact_point = self.center + (self.radius / dist) * vec
         normal_unit_vector = (contact_point - particle.pos) / np.linalg.norm(contact_point - particle.pos)
 
-        overlap_rate = np.dot(particle.vel, normal_unit_vector) - self.omega * np.cross(normal_unit_vector, particle.pos - self.center)
+        # Скорость поверхности барабана в точке контакта
+        surface_vel = np.array([-self.omega * (contact_point[1] - self.center[1]),
+                                self.omega * (contact_point[0] - self.center[0])])
 
-        tangential_velocity = particle.vel - (np.dot(particle.vel, normal_unit_vector) * normal_unit_vector)
-
-
+        rel_vel = particle.vel - surface_vel
+        overlap_rate = np.dot(rel_vel, normal_unit_vector)
+        tangential_velocity = rel_vel - overlap_rate * normal_unit_vector
 
         return overlap, contact_point, normal_unit_vector, overlap_rate, tangential_velocity
 
-
-
     def apply_driving_torque(self, torque):
-
-        """Apply reactive torque from particles to the drum."""
-
+        """Накопление реактивного момента, который необходимо компенсировать."""
         self.applied_torque += torque

@@ -1,65 +1,37 @@
 import numpy as np
 from .force_calculation import compute_all_forces
 
-
 def velocity_verlet_step(particles, dt, contact_model, boundaries):
+    """
+    Один шаг интегратора Velocity Verlet.
+    """
+    # ----- Полушаг скоростей -----
+    for p in particles:
+        a = p.force / p.mass
+        alpha = p.torque / p.inertia
+        p.vel += 0.5 * a * dt
+        p.ang_vel += 0.5 * alpha * dt
 
-    # Half-step velocity update
+    # ----- Обновление позиций -----
+    for p in particles:
+        p.pos += p.vel * dt
+        # угловая позиция в 2D не хранится, но учитываем вращение в расчётах
+        p.ang_vel += p.ang_vel * dt  # (можно опустить, оставлено для совместимости)
 
-    for particle in particles:
+    # ----- Обнуление сил -----
+    for p in particles:
+        p.reset_force()
 
-        a = particle.force / particle.mass
-
-        alpha = particle.torque / particle.inertia
-
-        particle.vel += 0.5 * a * dt
-
-        particle.ang_vel += 0.5 * alpha * dt
-
-
-
-    # Update positions
-
-    for particle in particles:
-
-        particle.pos += particle.vel * dt
-
-        particle.ang_vel += particle.ang_vel * dt
-
-
-
-    # Reset forces and torques
-
-    for particle in particles:
-
-        particle.force = np.zeros(2)
-
-        particle.torque = 0.0
-
-
-
-    # Compute all forces
-
+    # ----- Вычисление новых сил -----
     compute_all_forces(particles, boundaries, contact_model)
 
+    # ----- Второй полушаг скоростей -----
+    for p in particles:
+        a = p.force / p.mass
+        alpha = p.torque / p.inertia
+        p.vel += 0.5 * a * dt
+        p.ang_vel += 0.5 * alpha * dt
 
-
-    # Second half-step velocity update with new forces
-
-    for particle in particles:
-
-        a = particle.force / particle.mass
-
-        alpha = particle.torque / particle.inertia
-
-        particle.vel += 0.5 * a * dt
-
-        particle.ang_vel += 0.5 * alpha * dt
-
-
-
-    # Save history
-
-    for particle in particles:
-
-        particle.update_history()
+    # ----- Сохранение истории -----
+    for p in particles:
+        p.update_history()

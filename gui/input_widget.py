@@ -1,181 +1,118 @@
-from PyQt5.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QFormLayout,
-    QHBoxLayout,
-    QSpinBox,
-    QDoubleSpinBox,
-    QPushButton,
-    QLabel,
-)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QSpinBox, QDoubleSpinBox, QPushButton, QLabel)
 from utils.config import SimulationConfig
                                                                                                                                                                                   
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-class InputWidget(QWidget):                                                                                                                                                       
-                                                                                                                                                                                  
-    def __init__(self):                                                                                                                                                           
-                                                                                                                                                                                  
-        super().__init__()                                                                                                                                                        
-                                                                                                                                                                                  
-        self.layout = QVBoxLayout()                                                                                                                                               
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-        # Parameters block 1                                                                                                                                                      
-                                                                                                                                                                                  
-        params_block1_layout = QFormLayout()                                                                                                                                      
-                                                                                                                                                                                  
-        self.num_particles_spinbox = QSpinBox()                                                                                                                                   
-                                                                                                                                                                                  
-        self.particle_radius_doublespinbox = QDoubleSpinBox()                                                                                                                     
-                                                                                                                                                                                  
-        self.particle_density_doublespinbox = QDoubleSpinBox()                                                                                                                    
-                                                                                                                                                                                  
-        params_block1_layout.addRow(QLabel("Number of Particles:"), self.num_particles_spinbox)                                                                                   
-                                                                                                                                                                                  
-        params_block1_layout.addRow(QLabel("Particle Radius (m):"), self.particle_radius_doublespinbox)                                                                           
-                                                                                                                                                                                  
-        params_block1_layout.addRow(QLabel("Particle Density (kg/m^3):"), self.particle_density_doublespinbox)                                                                    
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-        # Parameters block 2                                                                                                                                                      
-                                                                                                                                                                                  
-        params_block2_layout = QFormLayout()                                                                                                                                      
-                                                                                                                                                                                  
-        self.kn_doublespinbox = QDoubleSpinBox()                                                                                                                                  
-                                                                                                                                                                                  
-        self.restitution_doublespinbox = QDoubleSpinBox()                                                                                                                         
-                                                                                                                                                                                  
-        self.friction_static_doublespinbox = QDoubleSpinBox()                                                                                                                     
-                                                                                                                                                                                  
-        self.friction_dynamic_doublespinbox = QDoubleSpinBox()                                                                                                                    
-                                                                                                                                                                                  
-        params_block2_layout.addRow(QLabel("Kn (N/m):"), self.kn_doublespinbox)                                                                                                   
-                                                                                                                                                                                  
-        params_block2_layout.addRow(QLabel("Restitution:"), self.restitution_doublespinbox)                                                                                       
-                                                                                                                                                                                  
-        params_block2_layout.addRow(QLabel("Friction Static:"), self.friction_static_doublespinbox)                                                                               
-                                                                                                                                                                                  
-        params_block2_layout.addRow(QLabel("Friction Dynamic:"), self.friction_dynamic_doublespinbox)                                                                             
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-        # Parameters block 3                                                                                                                                                      
-                                                                                                                                                                                  
-        params_block3_layout = QFormLayout()                                                                                                                                      
-                                                                                                                                                                                  
-        self.rolling_friction_doublespinbox = QDoubleSpinBox()                                                                                                                    
-                                                                                                                                                                                  
-        self.drum_radius_doublespinbox = QDoubleSpinBox()                                                                                                                         
-                                                                                                                                                                                  
-        self.drum_omega_doublespinbox = QDoubleSpinBox()                                                                                                                          
-                                                                                                                                                                                  
-        self.dt_doublespinbox = QDoubleSpinBox()                                                                                                                                  
-                                                                                                                                                                                  
-        self.total_time_doublespinbox = QDoubleSpinBox()                                                                                                                          
-                                                                                                                                                                                  
-        params_block3_layout.addRow(QLabel("Rolling Friction Coeff:"), self.rolling_friction_doublespinbox)                                                                       
-                                                                                                                                                                                  
-        params_block3_layout.addRow(QLabel("Drum Radius (m):"), self.drum_radius_doublespinbox)                                                                                   
-                                                                                                                                                                                  
-        params_block3_layout.addRow(QLabel("Drum Angular Velocity (rad/s):"), self.drum_omega_doublespinbox)                                                                      
-                                                                                                                                                                                  
-        params_block3_layout.addRow(QLabel("Time Step (s):"), self.dt_doublespinbox)                                                                                              
-                                                                                                                                                                                  
-        params_block3_layout.addRow(QLabel("Total Time (s):"), self.total_time_doublespinbox)                                                                                     
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-        # Buttons                                                                                                                                                                 
-                                                                                                                                                                                  
-        button_layout = QHBoxLayout()                                                                                                                                             
-                                                                                                                                                                                  
-        self.apply_button = QPushButton("Apply")                                                                                                                                  
-                                                                                                                                                                                  
-        button_layout.addWidget(self.apply_button)                                                                                                                                
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-        # Add layouts to main layout                                                                                                                                              
-                                                                                                                                                                                  
-        self.layout.addLayout(params_block1_layout)                                                                                                                               
-                                                                                                                                                                                  
-        self.layout.addLayout(params_block2_layout)                                                                                                                               
-                                                                                                                                                                                  
-        self.layout.addLayout(params_block3_layout)                                                                                                                               
-                                                                                                                                                                                  
-        self.layout.addLayout(button_layout)                                                                                                                                      
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-        self.setLayout(self.layout)                                                                                                                                               
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-    def apply_config(self):
-        """Return a plain dictionary of the current parameters.
-        This method is kept for backward compatibility with any external code that may have used it.
-        """
-        return {
-            "num_particles": self.num_particles_spinbox.value(),
-            "particle_radius": self.particle_radius_doublespinbox.value(),
-            "particle_density": self.particle_density_doublespinbox.value(),
-            "kn": self.kn_doublespinbox.value(),
-            "restitution_coeff": self.restitution_doublespinbox.value(),
-            "friction_static": self.friction_static_doublespinbox.value(),
-            "friction_dynamic": self.friction_dynamic_doublespinbox.value(),
-            "rolling_friction_coeff": self.rolling_friction_doublespinbox.value(),
-            "drum_radius": self.drum_radius_doublespinbox.value(),
-            "drum_omega": self.drum_omega_doublespinbox.value(),
-            "dt": self.dt_doublespinbox.value(),
-            "total_time": self.total_time_doublespinbox.value(),
-        }
+class InputWidget(QWidget):                                                                                                                                                      
+    """Панель ввода параметров симуляции."""                                                                                                                                     
+    def __init__(self):                                                                                                                                                          
+        super().__init__()                                                                                                                                                       
+        self.layout = QVBoxLayout()                                                                                                                                              
+        self.setLayout(self.layout)                                                                                                                                              
+                                                                                                                                                                                 
+        # ---------- Блок 1 ----------                                                                                                                                           
+        block1 = QFormLayout()                                                                                                                                                   
+        self.num_particles_spinbox = QSpinBox()                                                                                                                                  
+        self.num_particles_spinbox.setRange(1, 10000)                                                                                                                            
+        self.num_particles_spinbox.setValue(100)                                                                                                                                 
+                                                                                                                                                                                 
+        self.particle_radius_spinbox = QDoubleSpinBox()                                                                                                                          
+        self.particle_radius_spinbox.setDecimals(4)                                                                                                                              
+        self.particle_radius_spinbox.setSingleStep(0.001)                                                                                                                        
+        self.particle_radius_spinbox.setValue(0.02)                                                                                                                              
+                                                                                                                                                                                 
+        self.particle_density_spinbox = QDoubleSpinBox()                                                                                                                         
+        self.particle_density_spinbox.setDecimals(1)                                                                                                                             
+        self.particle_density_spinbox.setSingleStep(100)                                                                                                                         
+        self.particle_density_spinbox.setValue(2500.0)                                                                                                                           
+                                                                                                                                                                                 
+        block1.addRow(QLabel("Количество частиц:"), self.num_particles_spinbox)                                                                                                  
+        block1.addRow(QLabel("Радиус частицы (м):"), self.particle_radius_spinbox)                                                                                               
+        block1.addRow(QLabel("Плотность (кг/м³):"), self.particle_density_spinbox)                                                                                               
+                                                                                                                                                                                 
+        # ---------- Блок 2 ----------                                                                                                                                           
+        block2 = QFormLayout()                                                                                                                                                   
+        self.kn_spinbox = QDoubleSpinBox()                                                                                                                                       
+        self.kn_spinbox.setDecimals(0)                                                                                                                                           
+        self.kn_spinbox.setSingleStep(1e4)                                                                                                                                       
+        self.kn_spinbox.setValue(1e5)                                                                                                                                            
+                                                                                                                                                                                 
+        self.restitution_spinbox = QDoubleSpinBox()                                                                                                                              
+        self.restitution_spinbox.setDecimals(2)                                                                                                                                  
+        self.restitution_spinbox.setSingleStep(0.05)                                                                                                                             
+        self.restitution_spinbox.setValue(0.9)                                                                                                                                   
+                                                                                                                                                                                 
+        self.friction_static_spinbox = QDoubleSpinBox()                                                                                                                          
+        self.friction_static_spinbox.setDecimals(2)                                                                                                                              
+        self.friction_static_spinbox.setSingleStep(0.05)                                                                                                                         
+        self.friction_static_spinbox.setValue(0.5)                                                                                                                               
+                                                                                                                                                                                 
+        self.friction_dynamic_spinbox = QDoubleSpinBox()                                                                                                                         
+        self.friction_dynamic_spinbox.setDecimals(2)                                                                                                                             
+        self.friction_dynamic_spinbox.setSingleStep(0.05)                                                                                                                        
+        self.friction_dynamic_spinbox.setValue(0.4)                                                                                                                              
+                                                                                                                                                                                 
+        block2.addRow(QLabel("Жёсткость Kn (N/m):"), self.kn_spinbox)                                                                                                            
+        block2.addRow(QLabel("Коэффициент восстановления:"), self.restitution_spinbox)                                                                                           
+        block2.addRow(QLabel("Статическое трение μs:"), self.friction_static_spinbox)                                                                                            
+        block2.addRow(QLabel("Динамическое трение μd:"), self.friction_dynamic_spinbox)                                                                                          
+                                                                                                                                                                                 
+        # ---------- Блок 3 ----------                                                                                                                                           
+        block3 = QFormLayout()                                                                                                                                                   
+        self.rolling_friction_spinbox = QDoubleSpinBox()                                                                                                                         
+        self.rolling_friction_spinbox.setDecimals(3)                                                                                                                             
+        self.rolling_friction_spinbox.setSingleStep(0.001)                                                                                                                       
+        self.rolling_friction_spinbox.setValue(0.01)                                                                                                                             
+                                                                                                                                                                                 
+        self.drum_radius_spinbox = QDoubleSpinBox()                                                                                                                              
+        self.drum_radius_spinbox.setDecimals(3)                                                                                                                                  
+        self.drum_radius_spinbox.setSingleStep(0.01)                                                                                                                             
+        self.drum_radius_spinbox.setValue(0.5)                                                                                                                                   
+                                                                                                                                                                                 
+        self.drum_omega_spinbox = QDoubleSpinBox()                                                                                                                               
+        self.drum_omega_spinbox.setDecimals(2)                                                                                                                                   
+        self.drum_omega_spinbox.setSingleStep(0.1)                                                                                                                               
+        self.drum_omega_spinbox.setValue(2.0)                                                                                                                                    
+                                                                                                                                                                                 
+        self.dt_spinbox = QDoubleSpinBox()                                                                                                                                       
+        self.dt_spinbox.setDecimals(7)                                                                                                                                           
+        self.dt_spinbox.setSingleStep(1e-6)                                                                                                                                      
+        self.dt_spinbox.setValue(1e-5)                                                                                                                                           
+                                                                                                                                                                                 
+        self.total_time_spinbox = QDoubleSpinBox()                                                                                                                               
+        self.total_time_spinbox.setDecimals(2)                                                                                                                                   
+        self.total_time_spinbox.setSingleStep(0.5)                                                                                                                               
+        self.total_time_spinbox.setValue(5.0)                                                                                                                                    
+                                                                                                                                                                                 
+        block3.addRow(QLabel("Коэффициент качения μr:"), self.rolling_friction_spinbox)                                                                                          
+        block3.addRow(QLabel("Радиус барабана (м):"), self.drum_radius_spinbox)                                                                                                  
+        block3.addRow(QLabel("Угловая скорость барабана (рад/с):"), self.drum_omega_spinbox)                                                                                     
+        block3.addRow(QLabel("Шаг по времени Δt (с):"), self.dt_spinbox)                                                                                                         
+        block3.addRow(QLabel("Общее время (с):"), self.total_time_spinbox)                                                                                                       
+                                                                                                                                                                                 
+        # ---------- Кнопка ----------                                                                                                                                           
+        button_layout = QHBoxLayout()                                                                                                                                            
+        self.apply_button = QPushButton("Применить")                                                                                                                             
+        button_layout.addWidget(self.apply_button)                                                                                                                               
+                                                                                                                                                                                 
+        # ---------- Сборка ----------                                                                                                                                           
+        self.layout.addLayout(block1)                                                                                                                                            
+        self.layout.addLayout(block2)                                                                                                                                            
+        self.layout.addLayout(block3)                                                                                                                                            
+        self.layout.addLayout(button_layout)                                                                                                                                                          
 
     def get_config(self) -> SimulationConfig:
-        """Legacy method expected by ``MainWindow`` – returns a ``SimulationConfig`` instance.
-        It pulls values from the current widgets and constructs the dataclass.
+        """Создаёт объект SimulationConfig из текущих значений виджетов.
         """
         return SimulationConfig(
-            num_particles=int(self.num_particles_spinbox.value()),
-            particle_radius=float(self.particle_radius_doublespinbox.value()),
-            particle_density=float(self.particle_density_doublespinbox.value()),
-            kn=float(self.kn_doublespinbox.value()),
-            restitution=float(self.restitution_doublespinbox.value()),
-            friction_static=float(self.friction_static_doublespinbox.value()),
-            friction_dynamic=float(self.friction_dynamic_doublespinbox.value()),
-            rolling_friction=float(self.rolling_friction_doublespinbox.value()),
-            drum_radius=float(self.drum_radius_doublespinbox.value()),
-            drum_omega=float(self.drum_omega_doublespinbox.value()),
-            dt=float(self.dt_doublespinbox.value()),
-            total_time=float(self.total_time_doublespinbox.value()),
+            num_particles=self.num_particles_spinbox.value(),                                                                                                                    
+            particle_radius=self.particle_radius_spinbox.value(),                                                                                                                
+            particle_density=self.particle_density_spinbox.value(),                                                                                                              
+            kn=self.kn_spinbox.value(),
+            restitution_coeff=self.restitution_spinbox.value(),                                                                                                                  
+            friction_static=self.friction_static_spinbox.value(),                                                                                                                
+            friction_dynamic=self.friction_dynamic_spinbox.value(),                                                                                                              
+            rolling_friction=self.rolling_friction_spinbox.value(),
+            drum_radius=self.drum_radius_spinbox.value(),                                                                                                                        
+            drum_omega=self.drum_omega_spinbox.value(),                                                                                                                          
+            dt=self.dt_spinbox.value(),                                                                                                                                          
+            total_time=self.total_time_spinbox.value()
         )
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-                                                                                                                                                                                  
-    def on_config_applied(self, config):                                                                                                                                          
-                                                                                                                                                                                  
-        self.num_particles_spinbox.setValue(config["num_particles"])                                                                                                              
-                                                                                                                                                                                  
-        self.particle_radius_doublespinbox.setValue(config["particle_radius"])                                                                                                    
-                                                                                                                                                                                  
-        self.particle_density_doublespinbox.setValue(config["particle_density"])                                                                                                  
-                                                                                                                                                                                  
-        self.kn_doublespinbox.setValue(config["kn"])                                                                                                                              
-                                                                                                                                                                                  
-        self.restitution_doublespinbox.setValue(config["restitution_coeff"])                                                                                                      
-                                                                                                                                                                                  
-        self.friction_static_doublespinbox.setValue(config["friction_static"])                                                                                                    
-                                                                                                                                                                                  
-        self.friction_dynamic_doublespinbox.setValue(config["friction_dynamic"])                                                                                                  
-                                                                                                                                                                                  
-        self.rolling_friction_doublespinbox.setValue(config["rolling_friction_coeff"])                                                                                            
-                                                                                                                                                                                  
-        self.drum_radius_doublespinbox.setValue(config["drum_radius"])                                                                                                            
-                                                                                                                                                                                  
-        self.drum_omega_doublespinbox.setValue(config["drum_omega"])                                                                                                              
-                                                                                                                                                                                  
-        self.dt_doublespinbox.setValue(config["dt"])                                                                                                                              
-                                                                                                                                                                                  
-        self.total_time_doublespinbox.setValue(config["total_time"])     

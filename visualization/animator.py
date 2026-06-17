@@ -11,13 +11,24 @@ class Animator:
 
     def animate(self, i):
         if self.scatter is None:
-            self.scatter = self.ax.scatter([p[i][0] for p in self.particles_history], [p[i][1] for p in self.particles_history])
+            x = [traj[i][0] for traj in self.particles_history]                                                                                                                  
+            y = [traj[i][1] for traj in self.particles_history]
+            self.scatter = self.ax.scatter(x, y, c='b')
         else:
-            x_coords = [p[i][0] for p in self.particles_history]
-            y_coords = [p[i][1] for p in self.particles_history]
-            self.scatter.set_offsets(np.c_[x_coords, y_coords])
-        return self.scatter,
+            x = [traj[i][0] for traj in self.particles_history]                                                                                                                  
+            y = [traj[i][1] for traj in self.particles_history]                                                                                                                  
+            self.scatter.set_offsets(np.c_[x, y])                                                                                                                                
+        return (self.scatter,)
 
-    def create_animation(self):
-        ani = animation.FuncAnimation(self.fig, self.animate, frames=len(self.particles_history[0]), blit=True)
+    def create_animation(self, interval=30, repeat=False):                                                                                                                       
+        """Возвращает объект FuncAnimation."""                                                                                                                                   
+        frames = len(self.particles_history[0])                                                                                                                                  
+        ani = animation.FuncAnimation(                                                                                                                                           
+            self.fig,                                                                                                                                                            
+            self.animate,                                                                                                                                                        
+            frames=frames,                                                                                                                                                       
+            interval=interval,                                                                                                                                                   
+            blit=True,                                                                                                                                                           
+            repeat=repeat                                                                                                                                                        
+        )
         return ani

@@ -1,80 +1,77 @@
 import numpy as np
-from .geometry import WallCircle
+from .contact_model import ContactModel
 
-def compute_all_forces (particles, boundaries, contact_model):
+def compute_all_forces(particles, boundaries, contact_model: ContactModel):
+    """
+    Вычисляет все взаимодействия частиц‑частиц и частица‑граница.
+    Сохраняет реактивный момент в объекте WallCircle.
+    """
+    n = len(particles)
 
+    # ---- Частица‑частица ----
+    for i in range(n):
+        for j in range(i + 1, n):
+            pi, pj = particles[i], particles[j]
+            delta = pj.pos - pi.pos
+            dist = np.linalg.norm(delta)
 
-    num_particles = len(particles)
+            if dist < pi.radius + pj.radius:
+                overlap = pi.radius + pj.radius - dist
+                normal = delta / dist if dist != 0 else np.array([1.0, 0.0])
 
+                # относительная скорость в нормальном и касательном направлениях
+                rel_vel = pj.vel - pi.vel
+                overlap_rate = np.dot(rel_vel, normal)
+                tangential_vel = rel_vel - overlap_rate * normal
+                rel_vel_tang = np.cross([0, 0, np.linalg.norm(tangential_vel)], [0, 0, 1])[2]
 
+                # Для простоты считаем, что касательное смещение = 0 (можно расширить)
+                tangential_disp = 0.0
+                effective_radius = (pi.radius * pj.radius) / (pi.radius + pj.radius)
 
-    for i in range(num_particles):
+                fn_vec, ft_vec, torque_i, torque_j = contact_model.compute_forces(
+                    overlap,
+                    overlap_rate,
+                    tangential_disp,
+                    rel_vel_tang,
+                    effective_radius,
+                    normal,
+                    pi,
+                    pj
+                )
 
+                pi.apply_force(-fn_vec - ft_vec, torque_i)
+                pj.apply_force(fn_vec + ft_vec, torque_j)
 
-
-        for j in range(i + 1, num_particles):
-
-
-
-            dist = np.linalg.norm(particles[i].pos - particles[j].pos)
-
-
-
-            if dist < particles[i].radius + particles[j].radius:
-
-
-
-                overlap = (particles[i].radius + particles[j].radius) - dist
-
-
-
-                normal_unit_vector = (particles[j].pos - particles[i].pos) / dist
-
-
-
-                rel_vel_tang = np.cross(normal_unit_vector, particles[i].vel - particles[j].vel)
-
-
-
-                effective_radius = 0.5 * (particles[i].radius + particles[j].radius)
-
-
-                normal_force, tangential_force, torque1, torque2 = contact_model.compute_forces(overlap, 0, 0, rel_vel_tang, effective_radius, normal_unit_vector, particles[i], particles[j])
-
-                particles[i].apply_force(-normal_force, -torque1)
-
-                particles[j].apply_force(normal_force, torque2)
-
-
+    # ---- Частица‑граница ----
     for boundary in boundaries:
+        for p in particles:
+            coll = boundary.detect_collision(p)
+            if coll is None:
+                continue
 
+            overlap, contact_point, normal, overlap_rate, tangential_vel = coll
 
+            # относительная касательная скорость (модуль)
+            rel_vel_tang = np.cross([0, 0, np.linalg.norm(tangential_vel)], [0, 0, 1])[2]
 
-        for particle in particles:
+            # Считаем, что касательное смещение = 0
+            tangential_disp = 0.0
+            effective_radius = p.radius
 
+            fn_vec, ft_vec, torque_p, _ = contact_model.compute_forces(
+                overlap,
+                overlap_rate,
+                tangential_disp,
+                rel_vel_tang,
+                effective_radius,
+                normal,
+                p,
+                None
+            )
 
+            p.apply_force(-fn_vec - ft_vec, torque_p)
 
-            collision_info = boundary.detect_collision(particle)
-
-
-
-            if collision_info is not None:
-
-
-
-                overlap, contact_point, normal_unit_vector, overlap_rate, tangential_velocity = collision_info
-
-
-
-                effective_radius = particle.radius
-
-
-                normal_force, tangential_force, torque1, _ = contact_model.compute_forces(overlap, overlap_rate, 0, tangential_velocity[1], effective_radius, normal_unit_vector, particle)
-
-
-                particle.apply_force(-normal_force, -torque1)
-
-
-                if isinstance(boundary, WallCircle):
-
-                    boundary.apply_driving_torque(torque1)
+            if isinstance(boundary, WallCircle):
+                # реактивный момент, который частицы передали барабану
+                boundary.apply_driving_torque(torque_p)
