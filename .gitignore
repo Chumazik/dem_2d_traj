@@ -21,3 +21,5 @@ mcp-server/
 .continue/*
 
 *.json
+.aider.chat.history.md
+.aider.input.history
