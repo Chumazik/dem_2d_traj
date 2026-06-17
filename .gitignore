@@ -15,7 +15,9 @@ curl -o .gitignore https://raw.githubusercontent.com/github/gitignore/main/Pytho
 .aider.chat.history.md
 .aider.input.history
 
-node_modules/*
-mcp-server/*
+node_modules/
+mcp-server/
+
+.continue/*
 
 *.json
