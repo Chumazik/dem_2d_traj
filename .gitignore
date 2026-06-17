@@ -23,3 +23,9 @@ mcp-server/
 *.json
 .aider.chat.history.md
 .aider.input.history
+
+.qwen/
+gha-creds-*.json
+
+
+.github
