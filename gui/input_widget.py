@@ -66,8 +66,8 @@ class InputWidget(QWidget):
 
         self.setLayout(self.layout)
 
-    def get_config(self):
-        return SimulationConfig(
+    def apply_button(self):
+        config = SimulationConfig(
             num_particles=int(self.num_particles_spinbox.value()),
             particle_radius=float(self.particle_radius_spinbox.value()),
             particle_density=float(self.particle_density_spinbox.value()),
@@ -78,6 +78,12 @@ class InputWidget(QWidget):
             rolling_friction=float(self.rolling_friction_spinbox.value()),
             drum_radius=float(self.drum_radius_spinbox.value()),
             drum_omega=float(self.drum_omega_spinbox.value()),
-            dt=1e-5,  # Шаг по времени фиксированный
-            total_time=5.0  # Общее время симуляции фиксированное
+            dt=1e-5,
+            total_time=5.0
         )
+        # Assuming there's a way to pass this config elsewhere, e.g., through signals or global variables
+        self.on_config_applied(config)
+
+    def on_config_applied(self, config):
+        # Handle the configuration update (e.g., save it, use it for simulation initialization)
+        print("Configuration applied:", config)

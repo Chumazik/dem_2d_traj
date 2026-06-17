@@ -1,0 +1,10 @@
+# Editor configuration for data entry windows
+[data_entry]
+block1 = gui/input_widget.py
+    - Add methods to handle basic parameter inputs and updates from GUI.
+    - Define interactions with other blocks via event listeners or API endpoints.
+block2 = dem/contact_model.py
+    - Implement detailed logic for force calculations, collision detection, etc., based on user feedback.
+    - Integrate directly with block1 to fetch input values dynamically during runtime.
+block3 = main.py
+    - Set up orchestration logic that listens to GUI and contact model updates to trigger simulation steps or parameter adjustments.
