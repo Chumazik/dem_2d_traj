@@ -1,6 +1,14 @@
 import numpy as np
 from typing import Optional, Tuple
 
+class Contact:
+    """Класс для хранения состояния контакта между двумя частицами."""
+    
+    def __init__(self, id1: int, id2: int):
+        self.id1 = id1
+        self.id2 = id2
+        self.tangential_displacement = 0.0
+
 class ContactModel:
     """Модель контакта с упругой, демпфирующей и трением."""
 
@@ -17,11 +25,6 @@ class ContactModel:
         self.mu_s = mu_s
         self.mu_d = mu_d
         self.rolling_friction_coeff = rolling_friction_coeff
-
-        # Для расчёта демпфирующих коэффициентов требуется эффективная масса.
-        # При отсутствии второй частицы будем использовать m_eff = 1 (масштабируется позже).
-        self.gamma_n = -2.0 * np.log(self.restitution_coeff) * np.sqrt(self.kn * 1.0) / np.pi
-        self.gamma_t = -2.0 * np.log(self.restitution_coeff) * np.sqrt(self.kt * 1.0) / np.pi
 
     def compute_forces(self,
                        overlap: float,
@@ -57,11 +60,11 @@ class ContactModel:
 
         # ---------- Момент качения ----------
         if particle2 is not None:
-            # контакт частица‑частица
+            # контакт частица-частица
             r_eff = (particle1.radius * particle2.radius) / (particle1.radius + particle2.radius)
             omega_rel = particle1.ang_vel - particle2.ang_vel
         else:
-            # частица‑граница
+            # частица-граница
             r_eff = particle1.radius
             omega_rel = particle1.ang_vel
 
@@ -69,3 +72,7 @@ class ContactModel:
         rolling_torque2 = 0.0 if particle2 is None else -rolling_torque1
 
         return normal_force_vector, tangential_force_vector, rolling_torque1, rolling_torque2
+
+    def update_contact(self, contact: Contact, rel_vel_tang: float, dt: float):
+        """Обновляет касательное смещение для контакта."""
+        contact.tangential_displacement += rel_vel_tang * dt
