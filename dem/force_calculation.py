@@ -1,5 +1,6 @@
 import numpy as np
 from .contact_model import ContactModel, Contact
+from .geometry import WallCircle  # Добавлено импорт WallCircle
 
 def compute_all_forces(particles, boundaries, contact_model: ContactModel, contacts=None):
     """
