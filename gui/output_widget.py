@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QLabel
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 
@@ -10,7 +10,7 @@ class OutputWidget(QWidget):
         self.tabs = QTabWidget()
         self.layout.addWidget(self.tabs)
         
-    # ---- Траектории ----                                                                                                                                                   
+        # ---- Траектории ----                                                                                                                                                   
         self.traj_fig = plt.figure(figsize=(8, 6))                                                                                                                               
         self.traj_ax = self.traj_fig.add_subplot(111)                                                                                                                            
         self.traj_canvas = FigureCanvas(self.traj_fig)                                                                                                                           
@@ -32,6 +32,13 @@ class OutputWidget(QWidget):
     def show_results(self, simulation):
         if not hasattr(simulation, "torque_history") or len(simulation.torque_history) == 0:
             return
+        
+        # ---- Приводной момент ----                                                                                                                                           
+        self.torque_fig = plt.figure(figsize=(8, 6))                                                                                                                              
+        self.torque_ax = self.torque_fig.add_subplot(111)                                                                                                                         
+        self.torque_canvas = FigureCanvas(self.torque_fig)                                                                                                                       
+        self.tabs.addTab(self.torque_canvas, "Приводной момент")                                                                                                                  
+        
         self.torque_ax.clear()                                                                                                                                                   
         self.torque_ax.plot(simulation.time, simulation.torque_history, color='r')                                                                                               
         self.torque_ax.set_title("Приводной момент во времени")                                                                                                                  
@@ -39,15 +46,16 @@ class OutputWidget(QWidget):
         self.torque_ax.set_ylabel("Момент, Н·м")                                                                                                                                 
         self.torque_ax.grid(True)                                                                                                                                                
         self.torque_canvas.draw()                                                                                                                                                
-                                                                                                                                                                                    
-        avg = sum(simulation.torque_history) / len(simulation.torque_history)                                                                                                    
-        self.torque_canvas.draw()                                                                                                                                                
-                                                                                                                                                                                    
+        
         avg = sum(simulation.torque_history) / len(simulation.torque_history)                                                                                                    
         peak = max(simulation.torque_history)                                                                                                                                    
         power = peak * simulation.config.drum_omega                                                                                                                              
                                                                                                                                                                                     
-        self.avg_label.setText(f"Средний момент: {avg:.3f} Н·м")                                                                                                                 
-        self.peak_label.setText(f"Пиковый момент: {peak:.3f} Н·м")                                                                                                               
-        self.power_label.setText(f"Мощность: {power:.3f} Вт")
-
+        # ---- Метки для результатов ----                                                                                                                                       
+        self.avg_label = QLabel(f"Средний момент: {avg:.3f} Н·м")                                                                                                                 
+        self.peak_label = QLabel(f"Пиковый момент: {peak:.3f} Н·м")                                                                                                               
+        self.power_label = QLabel(f"Мощность: {power:.3f} Вт")
+        
+        self.layout.addWidget(self.avg_label)
+        self.layout.addWidget(self.peak_label)
+        self.layout.addWidget(self.power_label)
