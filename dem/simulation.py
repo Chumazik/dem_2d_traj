@@ -6,7 +6,7 @@ from .particle import Particle
 from .contact_model import ContactModel
 from .geometry import WallCircle
 from .integrator import velocity_verlet_step
-from utils.config import SimulationConfig
+from config import SimulationConfig  # Исправлен импорт SimulationConfig
 
 @dataclass
 class Simulation:
@@ -17,6 +17,8 @@ class Simulation:
     contact_model: ContactModel = None
     time: List[float] = field(default_factory=list)
     torque_history: List[float] = field(default_factory=list)
+    contacts: dict = field(default_factory=dict)  # Добавлен атрибут для хранения контактов
+    stop_requested: bool = False  # Флаг для прерывания симуляции
 
     def __post_init__(self):
         self.contact_model = ContactModel(
@@ -33,21 +35,22 @@ class Simulation:
     # Инициализация
     # --------------------------------------------------------------------- #
     def initialize_particles(self):
-        """Размещает частицы внутри барабана без перекрытий (простая спираль)."""
+        """Размещает частицы внутри барабана без перекрытий (метод hexagonal packing)."""
         R = self.config.drum_radius - self.config.particle_radius - 1e-4
-        angle_step = 2 * np.pi / max(self.config.num_particles, 1)
-        radius_step = self.config.particle_radius * 2.2
+        particle_diameter = 2 * self.config.particle_radius
+
+        # Вычисляем количество рядов и столбцов частиц
+        num_rows = int(np.sqrt(R**2 / (3 * particle_diameter**2)))
+        num_cols = int(num_rows)
 
         count = 0
-        r = self.config.particle_radius
-        while count < self.config.num_particles and r < R:
-            n_on_ring = int(2 * np.pi * r / (2 * self.config.particle_radius * 1.1))
-            for k in range(n_on_ring):
+        for i in range(num_rows):
+            for j in range(num_cols):
                 if count >= self.config.num_particles:
                     break
-                theta = k * 2 * np.pi / n_on_ring
-                x = r * np.cos(theta)
-                y = r * np.sin(theta)
+                x_offset = 0.5 * particle_diameter * (i % 2)
+                x = x_offset + j * particle_diameter
+                y = np.sqrt(3) / 2 * i * particle_diameter
                 pos = np.array([x, y])
                 mass = self.config.particle_density * np.pi * (self.config.particle_radius ** 2)
                 inertia = 0.5 * mass * (self.config.particle_radius ** 2)
@@ -64,9 +67,8 @@ class Simulation:
                 )
                 self.particles.append(particle)
                 count += 1
-            r += radius_step
 
-        # Если после спирали не удалось разместить все частицы, заполняем случайными позициями
+        # Если после hexagonal packing не удалось разместить все частицы, заполняем случайными позициями
         while count < self.config.num_particles:
             angle = np.random.rand() * 2 * np.pi
             rad = np.random.rand() * (R - self.config.particle_radius) + self.config.particle_radius
@@ -105,6 +107,8 @@ class Simulation:
     # --------------------------------------------------------------------- #
     def step(self):
         """Выполняет один временной шаг и сохраняет реактивный момент."""
+        self.contacts = compute_all_forces(self.particles, self.boundaries, self.contact_model, self.contacts)
+
         velocity_verlet_step(self.particles, self.config.dt, self.contact_model, self.boundaries)
 
         # Сохраняем реактивный момент от барабана (если он есть)
@@ -118,10 +122,19 @@ class Simulation:
         t = 0.0
         self.time.clear()
         self.torque_history.clear()
-        while t < self.config.total_time:
+        step_count = 0
+        while t < self.config.total_time and not self.stop_requested:
             self.step()
             self.time.append(t)
             t += self.config.dt
+            step_count += 1
+            if step_count % 10 == 0:
+                # Здесь можно добавить сигнал или колбэк для обновления прогресса
+                print(f"Progress: {t / self.config.total_time * 100:.2f}%")  # Пример вывода в консоль
+
+    def stop(self):
+        """Запрашивает остановку симуляции."""
+        self.stop_requested = True
 
     def get_trajectories(self):
         """Возвращает список историй всех частиц."""
