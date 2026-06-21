@@ -15,8 +15,6 @@ def velocity_verlet_step(particles, dt, contact_model, boundaries):
     # ----- Обновление позиций -----
     for p in particles:
         p.pos += p.vel * dt
-        # угловая позиция в 2D не хранится, но учитываем вращение в расчётах
-        p.ang_vel += p.ang_vel * dt  # (можно опустить, оставлено для совместимости)
 
     # ----- Обнуление сил -----
     for p in particles:
@@ -31,6 +29,10 @@ def velocity_verlet_step(particles, dt, contact_model, boundaries):
         alpha = p.torque / p.inertia
         p.vel += 0.5 * a * dt
         p.ang_vel += 0.5 * alpha * dt
+
+    # ----- Обновление угла ориентации -----
+    for p in particles:
+        p.angle += p.ang_vel * dt
 
     # ----- Сохранение истории -----
     for p in particles:
