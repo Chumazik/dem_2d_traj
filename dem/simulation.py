@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from .particle import Particle
-from .contact_model import ContactModel
+from .contact_model import ContactModel, compute_all_forces  # Исправлен импорт compute_all_forces
 from .geometry import WallCircle
 from .integrator import velocity_verlet_step
 from config import SimulationConfig  # Исправлен импорт SimulationConfig
