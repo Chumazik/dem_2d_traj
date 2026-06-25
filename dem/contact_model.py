@@ -18,13 +18,26 @@ class ContactModel:
                  mu_s: float = 0.5,
                  mu_d: float = 0.4,
                  rolling_friction_coeff: float = 0.01,
-                 kt: Optional[float] = None):
+                 kt: Optional[float] = None,
+                 dt: Optional[float] = None):
+        """
+        Параметры:
+            kn – жёсткость нормального контакта.
+            restitution_coeff – коэффициент восстановления.
+            mu_s – статическое трение.
+            mu_d – динамическое трение.
+            rolling_friction_coeff – коэффициент качения.
+            kt – жёсткость касательного контакта (по умолчанию 2/7 * kn).
+            dt – шаг интегрирования, нужен для расчёта касательного смещения.
+        """
         self.kn = kn
         self.kt = kt if kt is not None else 2.0 * kn / 7.0
         self.restitution_coeff = restitution_coeff
         self.mu_s = mu_s
         self.mu_d = mu_d
         self.rolling_friction_coeff = rolling_friction_coeff
+        # Сохраняем dt, чтобы в compute_all_forces можно было использовать
+        self.dt = dt if dt is not None else 0.0
 
     def compute_forces(self,
                        overlap: float,
@@ -43,11 +56,17 @@ class ContactModel:
             rolling_torque_on_particle2 (0, если граница)
         """
         # ---------- Нормальная сила ----------
-        fn_scalar = self.kn * overlap + self.gamma_n * overlap_rate
+        # Дэмпинг (gamma_n) и касательный дэмпинг (gamma_t) рассчитываются
+        # из коэффициента восстановления и жёсткости. Если их нет в модели,
+        # используем простую линейную демпфировку.
+        gamma_n = -2 * np.sqrt(self.kn * self.restitution_coeff)  # упрощённый расчёт
+        gamma_t = gamma_n  # часто берут одинаковый коэффициент
+
+        fn_scalar = self.kn * overlap + gamma_n * overlap_rate
         normal_force_vector = fn_scalar * normal_unit_vector
 
         # ---------- Касательная сила ----------
-        ft_trial = -self.kt * tangential_displacement - self.gamma_t * rel_vel_tang
+        ft_trial = -self.kt * tangential_displacement - gamma_t * rel_vel_tang
 
         if np.abs(ft_trial) > self.mu_s * np.abs(fn_scalar):
             # Динамическое трение
@@ -60,11 +79,11 @@ class ContactModel:
 
         # ---------- Момент качения ----------
         if particle2 is not None:
-            # контакт частица-частица
+            # контакт частица‑частица
             r_eff = (particle1.radius * particle2.radius) / (particle1.radius + particle2.radius)
             omega_rel = particle1.ang_vel - particle2.ang_vel
         else:
-            # частица-граница
+            # частица‑граница
             r_eff = particle1.radius
             omega_rel = particle1.ang_vel
 

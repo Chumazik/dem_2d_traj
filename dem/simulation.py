@@ -23,12 +23,14 @@ class Simulation:
     stop_requested: bool = False  # Флаг для прерывания симуляции
 
     def __post_init__(self):
+        # Передаём dt в модель контакта, чтобы она могла использовать его в compute_all_forces
         self.contact_model = ContactModel(
             kn=self.config.kn,
             restitution_coeff=self.config.restitution_coeff,
             mu_s=self.config.friction_static,
             mu_d=self.config.friction_dynamic,
-            rolling_friction_coeff=self.config.rolling_friction
+            rolling_friction_coeff=self.config.rolling_friction,
+            dt=self.config.dt
         )
         self.initialize_particles()
         self.initialize_boundaries()
