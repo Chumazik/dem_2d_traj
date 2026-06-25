@@ -3,15 +3,15 @@ from dataclasses import dataclass, field
 from typing import List
 
 from .particle import Particle
-from .contact_model import ContactModel, compute_all_forces  # Исправлен импорт compute_all_forces
+from .contact_model import ContactModel, Contact  # Исправлен импорт compute_all_forces
 from .geometry import WallCircle
 from .integrator import velocity_verlet_step
-from config import SimulationConfig  # Исправлен импорт SimulationConfig
+#from config import SimulationConfig  # Исправлен импорт SimulationConfig
 
 @dataclass
 class Simulation:
     """Главный класс симуляции."""
-    config: SimulationConfig
+    #config: SimulationConfig
     particles: List[Particle] = field(default_factory=list)
     boundaries: List[object] = field(default_factory=list)
     contact_model: ContactModel = None
