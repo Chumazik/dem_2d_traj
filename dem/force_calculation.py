@@ -34,7 +34,11 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel, conta
                     contacts[contact_key] = Contact(pi.id, pj.id)
 
                 contact = contacts[contact_key]
-                tangential_displacement = contact.tangential_displacement + np.dot(tangential_velocity, normal) * contact_model.config.dt
+                # Используем dt, хранящийся в модели контакта
+                tangential_displacement = (
+                    contact.tangential_displacement
+                    + np.dot(tangential_velocity, normal) * contact_model.dt
+                )
                 effective_radius = (pi.radius * pj.radius) / (pi.radius + pj.radius)
 
                 fn_vec, ft_vec, torque_i, torque_j = contact_model.compute_forces(
@@ -72,7 +76,10 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel, conta
                 contacts[contact_key] = Contact(p.id, None)
 
             contact = contacts[contact_key]
-            tangential_displacement = contact.tangential_displacement + rel_vel_tang * contact_model.config.dt
+            tangential_displacement = (
+                contact.tangential_displacement
+                + rel_vel_tang * contact_model.dt
+            )
 
             fn_vec, ft_vec, torque_p, _ = contact_model.compute_forces(
                 overlap,
