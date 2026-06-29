@@ -16,9 +16,14 @@ class SimulationThread(QThread):
         self._pause_event = threading.Event()
         self._pause_event.set()           # по умолчанию не паузим
         self._paused = False
+        self._stop_requested = False      # флаг для сброса
 
     def setSimulation(self, simulation: Simulation):
         self.simulation = simulation
+
+    def request_stop(self):
+        """Запрашивает остановку симуляции (сброс)."""
+        self._stop_requested = True
 
     def run(self):
         if self.simulation is None:
@@ -32,6 +37,10 @@ class SimulationThread(QThread):
             while t < self.simulation.config.total_time and not self.simulation.stop_requested:
                 # блокировка при паузе
                 self._pause_event.wait()
+
+                # проверка на сброс
+                if self._stop_requested:
+                    break
 
                 self.simulation.step()
                 step_count += 1

@@ -31,6 +31,26 @@ class OutputWidget(QWidget):
         self.layout.addWidget(self.peak_label)
         self.layout.addWidget(self.power_label)
 
+    def clear_results(self):
+        """Очищает графики и метки."""
+        self.traj_ax.clear()
+        self.traj_ax.set_title("Траектории частиц")
+        self.traj_ax.set_xlabel("X, м")
+        self.traj_ax.set_ylabel("Y, м")
+        self.traj_ax.grid(True)
+        self.traj_canvas.draw()
+
+        self.torque_ax.clear()
+        self.torque_ax.set_title("Приводной момент во времени")
+        self.torque_ax.set_xlabel("Время, с")
+        self.torque_ax.set_ylabel("Момент, Н·м")
+        self.torque_ax.grid(True)
+        self.torque_canvas.draw()
+
+        self.avg_label.setText("Средний момент: Н·м")
+        self.peak_label.setText("Пиковый момент: Н·м")
+        self.power_label.setText("Мощность: Вт")
+
     def update_particles(self, particles_histories):
         """Отрисовывает траектории частиц."""
         self.traj_ax.clear()
