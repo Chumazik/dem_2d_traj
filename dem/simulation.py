@@ -23,14 +23,15 @@ class Simulation:
     stop_requested: bool = False  # Флаг для прерывания симуляции
 
     def __post_init__(self):
-        # Передаём dt в модель контакта, чтобы она могла использовать его в compute_all_forces
+        # Передаём dt и config в модель контакта
         self.contact_model = ContactModel(
             kn=self.config.kn,
             restitution_coeff=self.config.restitution_coeff,
             mu_s=self.config.friction_static,
             mu_d=self.config.friction_dynamic,
             rolling_friction_coeff=self.config.rolling_friction,
-            dt=self.config.dt
+            dt=self.config.dt,
+            config=self.config   # <-- передаём config, теперь доступен как contact_model.config
         )
         self.initialize_particles()
         self.initialize_boundaries()
@@ -133,8 +134,7 @@ class Simulation:
             t += self.config.dt
             step_count += 1
             if step_count % 10 == 0:
-                # Здесь можно добавить сигнал или колбэк для обновления прогресса
-                print(f"Progress: {t / self.config.total_time * 100:.2f}%")  # Пример вывода в консоль
+                print(f"Progress: {t / self.config.total_time * 100:.2f}%")
 
     def stop(self):
         """Запрашивает остановку симуляции."""
