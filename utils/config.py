@@ -22,5 +22,8 @@ class SimulationConfig:
     rolling_friction: float = 0.01         # μ_r
     drum_radius: float = 0.5                # м
     drum_omega: float = 2.0                 # рад/с
+    lifter_height: float = 0.0              # м (высота лифтера, 0 - нет лифтеров)
+    lifter_width: float = 0.02              # м (ширина лифтера)
+    num_lifters: int = 0                    # количество лифтеров
     dt: float = 1e-5                       # с
     total_time: float = 5.0                # с

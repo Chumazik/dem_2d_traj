@@ -4,10 +4,10 @@ from typing import List
 
 from .particle import Particle
 from .contact_model import ContactModel, Contact
-from .geometry import WallCircle
+from .geometry import WallCircle, Lifter
 from .integrator import velocity_verlet_step
 from .force_calculation import compute_all_forces
-from utils.config import SimulationConfig  # Добавлен импорт SimulationConfig
+from utils.config import SimulationConfig
 
 
 @dataclass
@@ -19,11 +19,10 @@ class Simulation:
     contact_model: ContactModel = None
     time: List[float] = field(default_factory=list)
     torque_history: List[float] = field(default_factory=list)
-    contacts: dict = field(default_factory=dict)  # Добавлен атрибут для хранения контактов
-    stop_requested: bool = False  # Флаг для прерывания симуляции
+    contacts: dict = field(default_factory=dict)
+    stop_requested: bool = False
 
     def __post_init__(self):
-        # Передаём dt и config в модель контакта
         self.contact_model = ContactModel(
             kn=self.config.kn,
             restitution_coeff=self.config.restitution_coeff,
@@ -31,7 +30,7 @@ class Simulation:
             mu_d=self.config.friction_dynamic,
             rolling_friction_coeff=self.config.rolling_friction,
             dt=self.config.dt,
-            config=self.config   # <-- передаём config, теперь доступен как contact_model.config
+            config=self.config
         )
         self.initialize_particles()
         self.initialize_boundaries()
@@ -44,7 +43,6 @@ class Simulation:
         R = self.config.drum_radius - self.config.particle_radius - 1e-4
         particle_diameter = 2 * self.config.particle_radius
 
-        # Вычисляем количество рядов и столбцов частиц
         num_rows = int(np.sqrt(R**2 / (3 * particle_diameter**2)))
         num_cols = int(num_rows)
 
@@ -73,12 +71,10 @@ class Simulation:
                 self.particles.append(particle)
                 count += 1
 
-        # Если после hexagonal packing не удалось разместить все частицы, заполняем случайными позициями
         while count < self.config.num_particles:
             angle = np.random.rand() * 2 * np.pi
             rad = np.random.rand() * (R - self.config.particle_radius) + self.config.particle_radius
             pos = np.array([rad * np.cos(angle), rad * np.sin(angle)])
-            # простая проверка на перекрытие
             if any(np.linalg.norm(pos - p.pos) < 2 * self.config.particle_radius for p in self.particles):
                 continue
             mass = self.config.particle_density * np.pi * (self.config.particle_radius ** 2)
@@ -98,29 +94,48 @@ class Simulation:
             count += 1
 
     def initialize_boundaries(self):
-        """Создаёт единственную границу – вращающийся барабан."""
-        self.boundaries.append(
-            WallCircle(
-                center=(0.0, 0.0),
-                radius=self.config.drum_radius,
-                omega=self.config.drum_omega
-            )
+        """Создаёт границу – вращающийся барабан и лифтеры."""
+        drum = WallCircle(
+            center=(0.0, 0.0),
+            radius=self.config.drum_radius,
+            omega=self.config.drum_omega
         )
+        self.boundaries.append(drum)
+        
+        if self.config.num_lifters > 0 and self.config.lifter_height > 0:
+            for i in range(self.config.num_lifters):
+                base_angle = 2 * np.pi * i / self.config.num_lifters
+                lifter = Lifter(
+                    drum_center=(0.0, 0.0),
+                    drum_radius=self.config.drum_radius,
+                    height=self.config.lifter_height,
+                    width=self.config.lifter_width,
+                    base_angle=base_angle,
+                    omega=self.config.drum_omega
+                )
+                self.boundaries.append(lifter)
 
     # --------------------------------------------------------------------- #
     # Шаг и запуск
     # --------------------------------------------------------------------- #
     def step(self):
         """Выполняет один временной шаг и сохраняет реактивный момент."""
+        current_time = self.time[-1] if self.time else 0.0
+        for b in self.boundaries:
+            if hasattr(b, 'update_time'):
+                b.update_time(current_time)
+
         self.contacts = compute_all_forces(self.particles, self.boundaries, self.contact_model, self.contacts)
 
         velocity_verlet_step(self.particles, self.config.dt, self.contact_model, self.boundaries)
 
-        # Сохраняем реактивный момент от барабана (если он есть)
-        drum = next((b for b in self.boundaries if isinstance(b, WallCircle)), None)
-        if drum is not None:
-            self.torque_history.append(-drum.applied_torque)  # знак противоположный реактивному
-            drum.applied_torque = 0.0  # сбрасываем для следующего шага
+        total_torque = 0.0
+        for b in self.boundaries:
+            if hasattr(b, 'applied_torque'):
+                total_torque += b.applied_torque
+                b.applied_torque = 0.0
+                
+        self.torque_history.append(-total_torque)
 
     def run(self):
         """Запускает симуляцию до достижения total_time."""

@@ -65,3 +65,109 @@ class WallCircle(Boundary):
     def apply_driving_torque(self, torque):
         """Накопление реактивного момента, который необходимо компенсировать."""
         self.applied_torque += torque
+
+
+class Lifter(Boundary):
+    """Прямоугольный лифтер, жестко связанный с вращающимся барабаном."""
+    def __init__(self, drum_center, drum_radius, height, width, base_angle, omega):
+        self.drum_center = np.array(drum_center, dtype=float)
+        self.drum_radius = drum_radius
+        self.height = height
+        self.width = width
+        self.base_angle = base_angle
+        self.omega = omega
+        self.current_angle = base_angle
+        self.applied_torque = 0.0
+        
+        self._update_corners()
+
+    def _update_corners(self):
+        r_out = self.drum_radius
+        r_in = self.drum_radius - self.height
+        
+        tangent = np.array([-np.sin(self.current_angle), np.cos(self.current_angle)])
+        
+        center_out = self.drum_center + r_out * np.array([np.cos(self.current_angle), np.sin(self.current_angle)])
+        center_in = self.drum_center + r_in * np.array([np.cos(self.current_angle), np.sin(self.current_angle)])
+        
+        self.p1 = center_out - (self.width / 2) * tangent
+        self.p2 = center_out + (self.width / 2) * tangent
+        self.p3 = center_in + (self.width / 2) * tangent
+        self.p4 = center_in - (self.width / 2) * tangent
+
+    def update_time(self, t):
+        self.current_angle = self.base_angle + self.omega * t
+        self._update_corners()
+
+    def detect_collision(self, particle):
+        segments = [
+            (self.p1, self.p2),
+            (self.p2, self.p3),
+            (self.p3, self.p4),
+            (self.p4, self.p1)
+        ]
+        
+        min_dist_sq = float('inf')
+        closest_pt = None
+        
+        for p_a, p_b in segments:
+            pt = self._closest_point_on_segment(particle.pos, p_a, p_b)
+            dist_sq = np.sum((particle.pos - pt)**2)
+            if dist_sq < min_dist_sq:
+                min_dist_sq = dist_sq
+                closest_pt = pt
+                
+        dist = np.sqrt(min_dist_sq)
+        inside = self._is_inside(particle.pos)
+        
+        if not inside and dist >= particle.radius:
+            return None
+            
+        if inside:
+            overlap = particle.radius + dist
+            if dist > 1e-8:
+                normal_unit_vector = (particle.pos - closest_pt) / dist
+            else:
+                normal_unit_vector = np.array([np.cos(self.current_angle), np.sin(self.current_angle)])
+            contact_point = closest_pt
+        else:
+            overlap = particle.radius - dist
+            normal_unit_vector = (particle.pos - closest_pt) / dist
+            contact_point = closest_pt
+            
+        r_vec = contact_point - self.drum_center
+        surface_vel = np.array([-self.omega * r_vec[1], self.omega * r_vec[0]])
+        
+        rel_vel = particle.vel - surface_vel
+        overlap_rate = np.dot(rel_vel, normal_unit_vector)
+        tangential_velocity = rel_vel - overlap_rate * normal_unit_vector
+        
+        return overlap, contact_point, normal_unit_vector, overlap_rate, tangential_velocity
+
+    def _closest_point_on_segment(self, p, a, b):
+        ab = b - a
+        ap = p - a
+        ab_dot = np.dot(ab, ab)
+        if ab_dot < 1e-12:
+            return a
+        t = np.dot(ap, ab) / ab_dot
+        t = max(0.0, min(1.0, t))
+        return a + t * ab
+        
+    def _is_inside(self, p):
+        pts = [self.p1, self.p2, self.p3, self.p4]
+        n = len(pts)
+        sign = None
+        for i in range(n):
+            a = pts[i]
+            b = pts[(i+1)%n]
+            cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+            if sign is None:
+                sign = cross > 0
+            elif (cross > 0) != sign:
+                return False
+        return True
+
+    def apply_driving_torque(self, torque):
+        """Накопление реактивного момента."""
+        self.applied_torque += torque
