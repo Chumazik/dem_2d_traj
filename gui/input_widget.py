@@ -72,6 +72,20 @@ class InputWidget(QWidget):
         self.drum_omega_spinbox.setSingleStep(0.1)                                                                                                                               
         self.drum_omega_spinbox.setValue(2.0)                                                                                                                                    
                                                                                                                                                                                  
+        self.lifter_height_spinbox = QDoubleSpinBox()
+        self.lifter_height_spinbox.setDecimals(3)
+        self.lifter_height_spinbox.setSingleStep(0.01)
+        self.lifter_height_spinbox.setValue(0.0)
+
+        self.lifter_width_spinbox = QDoubleSpinBox()
+        self.lifter_width_spinbox.setDecimals(3)
+        self.lifter_width_spinbox.setSingleStep(0.005)
+        self.lifter_width_spinbox.setValue(0.02)
+
+        self.num_lifters_spinbox = QSpinBox()
+        self.num_lifters_spinbox.setRange(0, 100)
+        self.num_lifters_spinbox.setValue(0)
+
         self.dt_spinbox = QDoubleSpinBox()                                                                                                                                       
         self.dt_spinbox.setDecimals(7)                                                                                                                                           
         self.dt_spinbox.setSingleStep(1e-6)                                                                                                                                      
@@ -85,6 +99,9 @@ class InputWidget(QWidget):
         block3.addRow(QLabel("Коэффициент качения μr:"), self.rolling_friction_spinbox)                                                                                          
         block3.addRow(QLabel("Радиус барабана (м):"), self.drum_radius_spinbox)                                                                                                  
         block3.addRow(QLabel("Угловая скорость барабана (рад/с):"), self.drum_omega_spinbox)                                                                                     
+        block3.addRow(QLabel("Высота лифтеров (м):"), self.lifter_height_spinbox)
+        block3.addRow(QLabel("Ширина лифтеров (м):"), self.lifter_width_spinbox)
+        block3.addRow(QLabel("Количество лифтеров:"), self.num_lifters_spinbox)
         block3.addRow(QLabel("Шаг по времени Δt (с):"), self.dt_spinbox)                                                                                                         
         block3.addRow(QLabel("Общее время (с):"), self.total_time_spinbox)                                                                                                       
                                                                                                                                                                                  
@@ -112,7 +129,10 @@ class InputWidget(QWidget):
             friction_dynamic=self.friction_dynamic_spinbox.value(),                                                                                                              
             rolling_friction=self.rolling_friction_spinbox.value(),
             drum_radius=self.drum_radius_spinbox.value(),                                                                                                                        
-            drum_omega=self.drum_omega_spinbox.value(),                                                                                                                          
+            drum_omega=self.drum_omega_spinbox.value(),
+            lifter_height=self.lifter_height_spinbox.value(),
+            lifter_width=self.lifter_width_spinbox.value(),
+            num_lifters=self.num_lifters_spinbox.value(),
             dt=self.dt_spinbox.value(),                                                                                                                                          
             total_time=self.total_time_spinbox.value()
         )
