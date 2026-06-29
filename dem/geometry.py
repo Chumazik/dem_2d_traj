@@ -44,19 +44,23 @@ class WallCircle(Boundary):
             return None  # нет контакта
 
         overlap = self.radius + particle.radius - dist
-        # Точка контакта на внутренней поверхности барабана
-        contact_point = self.center + (self.radius / dist) * vec
-        normal_unit_vector = (contact_point - particle.pos) / np.linalg.norm(contact_point - particle.pos)
+        if dist == 0.0:
+            # Если частица точно в центре, выбираем произвольное направление
+            normal = np.array([1.0, 0.0])
+            contact_point = self.center + self.radius * normal
+        else:
+            normal = vec / dist
+            contact_point = self.center + (self.radius / dist) * vec
 
         # Скорость поверхности барабана в точке контакта
         surface_vel = np.array([-self.omega * (contact_point[1] - self.center[1]),
                                 self.omega * (contact_point[0] - self.center[0])])
 
         rel_vel = particle.vel - surface_vel
-        overlap_rate = np.dot(rel_vel, normal_unit_vector)
-        tangential_velocity = rel_vel - overlap_rate * normal_unit_vector
+        overlap_rate = np.dot(rel_vel, normal)
+        tangential_velocity = rel_vel - overlap_rate * normal
 
-        return overlap, contact_point, normal_unit_vector, overlap_rate, tangential_velocity
+        return overlap, contact_point, normal, overlap_rate, tangential_velocity
 
     def apply_driving_torque(self, torque):
         """Накопление реактивного момента, который необходимо компенсировать."""

@@ -30,9 +30,9 @@ def velocity_verlet_step(particles, dt, contact_model, boundaries):
         p.vel += 0.5 * a * dt
         p.ang_vel += 0.5 * alpha * dt
 
-    # ----- Обновление угла ориентации -----
-    for p in particles:
-        p.angle += p.ang_vel * dt
+    # ----- Обновление угла ориентации (закомментировано, т.к. Particle не имеет атрибута angle) -----
+    # for p in particles:
+    #     p.angle += p.ang_vel * dt
 
     # ----- Сохранение истории -----
     for p in particles:
