@@ -1,7 +1,8 @@
 import sys
 from PyQt5.QtWidgets import (
     QMainWindow, QSplitter, QApplication, QMenuBar, QMenu, QAction,
-    QMessageBox, QToolBar, QStatusBar, QWidget, QVBoxLayout
+    QMessageBox, QToolBar, QStatusBar, QWidget, QVBoxLayout,
+    QHBoxLayout, QPushButton, QProgressBar, QLabel
 )
 from PyQt5.QtCore import Qt
 from .input_widget import InputWidget
@@ -24,15 +25,29 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
 
+        # ---- Прогресс и пауза ----
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 1000)          # 1000 шагов для точности 0.1%
+        self.progress_label = QLabel("0.0 %")
+        self.pause_button = QPushButton("Пауза")
+        self.pause_button.setCheckable(True)
+        self.pause_button.clicked.connect(self.toggle_pause)
+
+        progress_layout = QHBoxLayout()
+        progress_layout.addWidget(self.progress_bar)
+        progress_layout.addWidget(self.progress_label)
+        progress_layout.addWidget(self.pause_button)
+
         # ---- Центральный виджет ----
         central = QWidget()
         layout = QVBoxLayout()
         layout.addWidget(splitter)
+        layout.addLayout(progress_layout)
         central.setLayout(layout)
         self.setCentralWidget(central)
 
         self.setWindowTitle("2D DEM Simulation")
-        self.resize(1200, 800)  # Устанавливаем разумный размер окна
+        self.resize(1200, 800)
 
         # ----- Status bar -----
         self.status = QStatusBar()
@@ -41,6 +56,9 @@ class MainWindow(QMainWindow):
         # ----- Поток симуляции -----
         self.sim_thread = SimulationThread()
         self.sim_thread.finished.connect(self.on_simulation_finished)
+        self.sim_thread.progress_percentage.connect(self.update_progress)
+        self.sim_thread.paused.connect(self.on_paused)
+        self.sim_thread.resumed.connect(self.on_resumed)
 
         # ----- Кнопка запуска -----
         self.input_widget.apply_button.clicked.connect(self.start_simulation)
@@ -51,9 +69,30 @@ class MainWindow(QMainWindow):
             simulation = Simulation(config)
             self.sim_thread.setSimulation(simulation)
             self.status.showMessage("Запуск симуляции...")
+            self.progress_bar.setValue(0)
+            self.progress_label.setText("0.0 %")
+            self.pause_button.setChecked(False)
             self.sim_thread.start()
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось запустить симуляцию:\n{e}")
+
+    def update_progress(self, percent: float):
+        # percent от 0 до 100
+        int_val = int(percent * 10)   # 0.1% -> 1 единица
+        self.progress_bar.setValue(int_val)
+        self.progress_label.setText(f"{percent:.1f} %")
+
+    def toggle_pause(self):
+        if self.sim_thread.isRunning():
+            self.sim_thread.toggle_pause()
+
+    def on_paused(self):
+        self.pause_button.setText("Продолжить")
+        self.status.showMessage("Симуляция приостановлена")
+
+    def on_resumed(self):
+        self.pause_button.setText("Пауза")
+        self.status.showMessage("Симуляция продолжается")
 
     def on_simulation_finished(self, simulation: Simulation):
         try:
@@ -61,5 +100,7 @@ class MainWindow(QMainWindow):
             self.output_widget.update_particles(trajectories)
             self.output_widget.show_results(simulation)
             self.status.showMessage("Симуляция завершена")
+            self.pause_button.setChecked(False)
+            self.pause_button.setText("Пауза")
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось отобразить результаты:\n{e}")
