@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>2D DEM Simulation (Web)</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .form-group { margin-bottom: 8px; }
+        label { display: inline-block; width: 250px; }
+        button { margin-top: 10px; padding: 6px 12px; }
+        #progress { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Параметры симуляции DEM</h1>
+    <div id="input-form">
+        <div class="form-group"><label>Количество частиц:</label><input type="number" id="num_particles" value="100"></div>
+        <div class="form-group"><label>Радиус частицы (м):</label><input type="number" step="0.001" id="particle_radius" value="0.02"></div>
+        <div class="form-group"><label>Плотность (кг/м³):</label><input type="number" step="100" id="particle_density" value="2500"></div>
+        <div class="form-group"><label>Жёсткость Kn (N/m):</label><input type="number" step="10000" id="kn" value="100000"></div>
+        <div class="form-group"><label>Коэффициент восстановления:</label><input type="number" step="0.05" id="restitution" value="0.9"></div>
+        <div class="form-group"><label>Статическое трение μs:</label><input type="number" step="0.05" id="friction_static" value="0.5"></div>
+        <div class="form-group"><label>Динамическое трение μd:</label><input type="number" step="0.05" id="friction_dynamic" value="0.4"></div>
+        <div class="form-group"><label>Коэффициент качения μr:</label><input type="number" step="0.001" id="rolling_friction" value="0.01"></div>
+        <div class="form-group"><label>Радиус барабана (м):</label><input type="number" step="0.01" id="drum_radius" value="0.5"></div>
+        <div class="form-group"><label>Угловая скорость (рад/с):</label><input type="number" step="0.1" id="drum_omega" value="2.0"></div>
+        <div class="form-group"><label>Высота лифтеров (м):</label><input type="number" step="0.01" id="lifter_height" value="0.0"></div>
+        <div class="form-group"><label>Ширина лифтеров (м):</label><input type="number" step="0.005" id="lifter_width" value="0.02"></div>
+        <div class="form-group"><label>Количество лифтеров:</label><input type="number" id="num_lifters" value="0"></div>
+        <div class="form-group"><label>Шаг по времени Δt (с):</label><input type="number" step="0.000001" id="dt" value="0.00001"></div>
+        <div class="form-group"><label>Общее время (с):</label><input type="number" step="0.5" id="total_time" value="5.0"></div>
+        <button onclick="startSim()">Запустить</button>
+    </div>
+    <div id="progress">Прогресс: <span id="prog-val">0.0</span>%</div>
+    <div id="traj-plot" style="width:800px;height:600px;"></div>
+    <div id="torque-plot" style="width:800px;height:600px;"></div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
