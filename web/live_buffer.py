@@ -6,24 +6,25 @@
 """
 
 import threading
+from typing import Iterable, List, Optional, Sequence
 
 
 class LiveBuffer:
     """Буфер для накопления промежуточных результатов симуляции."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._lock = threading.Lock()
         self.reset(0)
 
     def reset(self, num_particles: int) -> None:
         """Сбрасывает буфер и инициализирует списки под num_particles частиц."""
         with self._lock:
-            self._trajectories = [[] for _ in range(int(num_particles))]
-            self._time = []
-            self._torque = []
-            self._last_step = 0
-            self._progress = 0.0
-            self._running = False
+            self._trajectories: List[List[List[float]]] = [[] for _ in range(int(num_particles))]
+            self._time: List[float] = []
+            self._torque: List[float] = []
+            self._last_step: int = 0
+            self._progress: float = 0.0
+            self._running: bool = False
 
     def mark_running(self, running: bool) -> None:
         with self._lock:
@@ -37,16 +38,19 @@ class LiveBuffer:
         with self._lock:
             self._last_step = int(step)
 
-    def append(self, particles, t: float, torque) -> None:
+    def append(
+        self,
+        particles: Iterable[object],
+        t: float,
+        torque: Optional[float],
+    ) -> None:
         """Дописывает текущую позицию каждой частицы и значения t/torque.
 
-        Источник позиции частицы:
-          1) ``particle.history[-1]`` (если он есть и непустой);
-          2) ``particle.pos`` (текущая позиция).
+        Позиция берётся напрямую из ``particle.pos`` (текущая позиция).
 
-        Траектории хранятся как список списков [[x, y], ...] на частицу.
+        Траектории хранятся как список списков ``[[x, y], ...]`` на частицу.
         Если число частиц в ``particles`` отличается от размера буфера,
-        добавляются/обрезаются недостающие сегменты.
+        добавляются недостающие сегменты.
         """
         with self._lock:
             n = len(self._trajectories)
@@ -54,12 +58,7 @@ class LiveBuffer:
                 if i >= n:
                     self._trajectories.append([])
                     n += 1
-                pos = None
-                hist = getattr(p, "history", None)
-                if hist:
-                    pos = hist[-1]
-                if pos is None:
-                    pos = getattr(p, "pos", None)
+                pos = getattr(p, "pos", None)
                 if pos is None:
                     continue
                 try:
