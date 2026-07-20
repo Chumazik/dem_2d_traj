@@ -3,6 +3,10 @@
 Хранит уже посчитанные точки траекторий частиц, отметки времени и
 значения приводного момента. Используется Flask-приложением, чтобы
 отдавать клиенту частичные результаты через эндпоинт /partial_results.
+
+Буфер разделяет единый :class:`threading.RLock` с владельцем состояния
+(обычно :class:`web.app.SimState`), чтобы все обновления были атомарны
+относительно снимка.
 """
 
 import threading
@@ -12,8 +16,9 @@ from typing import Iterable, List, Optional, Sequence
 class LiveBuffer:
     """Буфер для накопления промежуточных результатов симуляции."""
 
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
+    def __init__(self, lock: Optional[threading.RLock] = None) -> None:
+        self._lock: threading.RLock = lock if lock is not None else threading.RLock()
+        self._owns_lock: bool = lock is None
         self.reset(0)
 
     def reset(self, num_particles: int) -> None:
@@ -38,11 +43,26 @@ class LiveBuffer:
         with self._lock:
             self._last_step = int(step)
 
+    def update_status(self, running: Optional[bool] = None,
+                      progress: Optional[float] = None,
+                      last_step: Optional[int] = None) -> None:
+        """Атомарно обновляет сразу несколько полей состояния буфера."""
+        with self._lock:
+            if running is not None:
+                self._running = bool(running)
+            if progress is not None:
+                self._progress = float(progress)
+            if last_step is not None:
+                self._last_step = int(last_step)
+
     def append(
         self,
         particles: Iterable[object],
         t: float,
         torque: Optional[float],
+        running: Optional[bool] = None,
+        progress: Optional[float] = None,
+        last_step: Optional[int] = None,
     ) -> None:
         """Дописывает текущую позицию каждой частицы и значения t/torque.
 
@@ -51,6 +71,10 @@ class LiveBuffer:
         Траектории хранятся как список списков ``[[x, y], ...]`` на частицу.
         Если число частиц в ``particles`` отличается от размера буфера,
         добавляются недостающие сегменты.
+
+        Дополнительно (опционально) атомарно обновляет поля
+        ``running``/``progress``/``last_step`` под тем же локом,
+        чтобы избежать второго захвата блокировки.
         """
         with self._lock:
             n = len(self._trajectories)
@@ -68,6 +92,13 @@ class LiveBuffer:
 
             self._time.append(float(t))
             self._torque.append(float(torque) if torque is not None else 0.0)
+
+            if running is not None:
+                self._running = bool(running)
+            if progress is not None:
+                self._progress = float(progress)
+            if last_step is not None:
+                self._last_step = int(last_step)
 
     def snapshot(self) -> dict:
         """Возвращает JSON-сериализуемый снимок текущего состояния буфера."""

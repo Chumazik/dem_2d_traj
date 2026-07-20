@@ -1,26 +1,139 @@
 from flask import Flask, render_template, request, jsonify
 import threading
 import time
+from typing import Optional
 from dem.simulation import Simulation
 from utils.config import SimulationConfig
 from web.live_buffer import LiveBuffer
 
 app = Flask(__name__)
 
-# Простое хранилище состояния последней симуляции (для примера)
-sim_state = {
-    "running": False,
-    "progress": 0.0,
-    "trajectories": None,        # финальные траектории
-    "torque_history": None,
-    "time": None,
-    "config": None,
-    "sim_id": 0
-}
-sim_lock = threading.Lock()
 
-# Потокобезопасный буфер промежуточных результатов
-live_buffer = LiveBuffer()
+class SimState:
+    """Единое состояние активной симуляции.
+
+    Все обращения к буферу и метаданным (``running``/``progress``/
+    ``sim_id``/``trajectories`` и т.д.) синхронизируются одним
+    :class:`threading.RLock`, чтобы любой снимок был атомарным.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._running: bool = False
+        self._progress: float = 0.0
+        self._sim_id: int = 0
+        self._trajectories: Optional[list] = None
+        self._torque_history: Optional[list] = None
+        self._time: Optional[list] = None
+        self._config: Optional[object] = None
+        # Буфер разделяет единый лок с состоянием.
+        self._buffer: LiveBuffer = LiveBuffer(lock=self._lock)
+
+    # ----- Метаданные ----- #
+    def is_running(self) -> bool:
+        with self._lock:
+            return self._running
+
+    def progress(self) -> float:
+        with self._lock:
+            return self._progress
+
+    def sim_id(self) -> int:
+        with self._lock:
+            return self._sim_id
+
+    def has_results(self) -> bool:
+        with self._lock:
+            return self._trajectories is not None
+
+    def request_stop(self) -> bool:
+        """Запрашивает остановку. Возвращает ``True``, если шла симуляция."""
+        with self._lock:
+            was_running = self._running
+            self._running = False
+            self._buffer.mark_running(False)
+            return was_running
+
+    def start(self, sim_id: int) -> bool:
+        """Отмечает старт симуляции. ``False``, если другая уже выполняется."""
+        with self._lock:
+            if self._running and self._sim_id != sim_id:
+                return False
+            self._running = True
+            self._progress = 0.0
+            self._sim_id = sim_id
+            self._trajectories = None
+            self._torque_history = None
+            self._time = None
+            return True
+
+    def finalize(self, *, trajectories, torque_history, time, config) -> None:
+        """Финализирует симуляцию: записывает результаты и снимает флаг."""
+        with self._lock:
+            self._running = False
+            self._progress = 100.0
+            self._trajectories = trajectories
+            self._torque_history = torque_history
+            self._time = time
+            self._config = config
+            self._buffer.mark_running(False)
+            self._buffer.set_progress(100.0)
+
+    # ----- Снимки под единым локом ----- #
+    def status_snapshot(self) -> dict:
+        with self._lock:
+            return {
+                "running": self._running,
+                "progress": self._progress,
+                "has_results": self._trajectories is not None,
+                "sim_id": self._sim_id,
+            }
+
+    def results_snapshot(self) -> dict:
+        with self._lock:
+            if self._trajectories is None:
+                return {"error": "no results"}
+            return {
+                "trajectories": self._trajectories,
+                "torque_history": self._torque_history or [],
+                "time": self._time or [],
+                "config": self._config.__dict__ if self._config else {},
+            }
+
+    def partial_snapshot(self, sim_id: int) -> dict:
+        with self._lock:
+            if self._sim_id == 0 or sim_id != self._sim_id:
+                return {"error": "no active simulation for this sim_id"}
+        snap = self._buffer.snapshot()
+        if not snap["trajectories"] and not snap["time"]:
+            return {"error": "no partial data yet"}
+        return snap
+
+    # ----- Доступ к буферу (для run_simulation) ----- #
+    def reset_buffer(self, num_particles: int) -> None:
+        with self._lock:
+            self._buffer.reset(num_particles)
+            self._buffer.mark_running(True)
+
+    def append_point(self, particles, t, torque,
+                     step: int, progress: float, running: bool) -> None:
+        """Атомарно: добавляет точку и обновляет метаданные."""
+        with self._lock:
+            self._buffer.append(particles, t, torque,
+                                running=running, progress=progress, last_step=step)
+            self._progress = progress
+            self._running = running
+
+    def should_continue(self, sim_id: int) -> bool:
+        with self._lock:
+            return self._running and self._sim_id == sim_id
+
+    def stop_requested(self, sim_id: int) -> bool:
+        with self._lock:
+            return (not self._running) or self._sim_id != sim_id
+
+
+state = SimState()
 
 
 def normalize_trajectories(traj):
@@ -37,28 +150,19 @@ def normalize_trajectories(traj):
 
 
 def run_simulation(config: SimulationConfig, sim_id: int):
-    global sim_state
-    with sim_lock:
-        if sim_state["running"] and sim_state["sim_id"] != sim_id:
-            return
-        sim_state["running"] = True
-        sim_state["progress"] = 0.0
-        sim_state["sim_id"] = sim_id
-        sim_state["trajectories"] = None
-        sim_state["torque_history"] = None
-        sim_state["time"] = None
+    if not state.start(sim_id):
+        return
 
     sim = Simulation(config)
+    state.reset_buffer(int(config.num_particles))
 
-    # Инициализируем буфер промежуточных результатов
-    live_buffer.reset(int(config.num_particles))
-    live_buffer.mark_running(True)
-
-    total_steps = int(config.total_time / config.dt)
+    total_steps = max(1, int(config.total_time / config.dt))
     step_count = 0
     t = 0.0
 
-    while t < config.total_time and not sim.stop_requested:
+    while t < config.total_time:
+        if state.stop_requested(sim_id):
+            break
         sim.step()
         step_count += 1
         t += config.dt
@@ -71,26 +175,19 @@ def run_simulation(config: SimulationConfig, sim_id: int):
             torque_now = sim.torque
 
         progress = min(100.0, (step_count / total_steps) * 100.0)
-
-        with sim_lock:
-            if not sim_state["running"] or sim_state["sim_id"] != sim_id:
-                break
-            sim_state["progress"] = progress
-
-        live_buffer.append(particles, t, torque_now)
-        live_buffer.set_last_step(step_count)
-        live_buffer.set_progress(progress)
-
-    live_buffer.mark_running(False)
+        # Атомарное обновление буфера и метаданных под единым локом
+        state.append_point(particles, t, torque_now,
+                           step=step_count, progress=progress,
+                           running=state.should_continue(sim_id))
 
     raw_traj = sim.get_trajectories()
     traj = normalize_trajectories(raw_traj)
-    with sim_lock:
-        sim_state["running"] = False
-        sim_state["trajectories"] = traj
-        sim_state["torque_history"] = sim.torque_history if hasattr(sim, "torque_history") else []
-        sim_state["time"] = sim.time if hasattr(sim, "time") else []
-        sim_state["config"] = config
+    state.finalize(
+        trajectories=traj,
+        torque_history=sim.torque_history if hasattr(sim, "torque_history") else [],
+        time=sim.time if hasattr(sim, "time") else [],
+        config=config,
+    )
 
 
 @app.route("/")
@@ -101,7 +198,7 @@ def index():
 @app.route("/start", methods=["POST"])
 def start():
     data = request.json
-    sim_id = data.get("sim_id", 0)
+    sim_id = int(data.get("sim_id", 0))
     config = SimulationConfig(
         num_particles=int(data.get("num_particles", 100)),
         particle_radius=float(data.get("particle_radius", 0.02)),
@@ -126,49 +223,21 @@ def start():
 
 @app.route("/stop", methods=["POST"])
 def stop():
-    with sim_lock:
-        if sim_state["running"]:
-            sim_state["running"] = False
-            live_buffer.mark_running(False)
-            return jsonify({"status": "stopped"})
-        return jsonify({"status": "not_running"})
+    was_running = state.request_stop()
+    return jsonify({"status": "stopped" if was_running else "not_running"})
 
 
 @app.route("/status")
 def status():
-    with sim_lock:
-        return jsonify({
-            "running": sim_state["running"],
-            "progress": sim_state["progress"],
-            "has_results": sim_state["trajectories"] is not None,
-            "sim_id": sim_state["sim_id"]
-        })
+    return jsonify(state.status_snapshot())
 
 
 @app.route("/partial_results")
 def partial_results():
-    """Промежуточные результаты: уже накопленные на данный момент срезы."""
     sim_id = request.args.get("sim_id", type=int)
-    with sim_lock:
-        if sim_state["sim_id"] == 0 or sim_id is None or sim_id != sim_state["sim_id"]:
-            return jsonify({"error": "no active simulation for this sim_id"})
-    snap = live_buffer.snapshot()
-    if not snap["trajectories"] and not snap["time"]:
-        return jsonify({"error": "no partial data yet"})
-    return jsonify(snap)
+    return jsonify(state.partial_snapshot(sim_id or 0))
 
 
 @app.route("/results")
 def results():
-    sim_id = request.args.get("sim_id", type=int)
-    with sim_lock:
-        if sim_id is not None and sim_id != sim_state["sim_id"] and sim_state["trajectories"] is None:
-            return jsonify({"error": "no results for this sim_id"})
-        if sim_state["trajectories"] is None:
-            return jsonify({"error": "no results"})
-        return jsonify({
-            "trajectories": sim_state["trajectories"],
-            "torque_history": sim_state["torque_history"],
-            "time": sim_state["time"],
-            "config": sim_state["config"].__dict__ if sim_state["config"] else {}
-        })
+    return jsonify(state.results_snapshot())
