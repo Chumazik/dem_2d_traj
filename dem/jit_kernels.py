@@ -1,0 +1,146 @@
+"""JIT-ядра для горячего цикла DEM (Numba).
+
+Все ядра принимают только ``numpy.ndarray`` и скаляры, поэтому
+Numba может JIT-компилировать их один раз и дальше вызывать
+без Python-overhead.
+
+Адаптеры (распаковка Particle в SoA + сборка обратно) находятся
+в ``dem/force_calculation.py`` и ``dem/integrator.py``.
+"""
+
+import numpy as np
+from numba import njit, prange
+
+
+@njit(cache=True, fastmath=True, parallel=True)
+def _pairwise_particle_forces(
+    pos,             # (N, 2)
+    vel,             # (N, 2)
+    ang_vel,         # (N,)
+    radius,          # (N,)
+    force_out,       # (N, 2) – куда суммировать
+    torque_out,      # (N,)   – куда суммировать
+    tangential_disp, # (N, N) – накопленное касательное смещение
+    kn,
+    gamma_n,
+    kt,
+    gamma_t,
+    mu_s,
+    mu_d,
+    rolling_friction,
+    dt,
+):
+    """Батчевая версия part-part контактов.
+
+    Эквивалентна двойному циклу из :func:`dem.force_calculation.compute_all_forces`,
+    но без Python-overhead и аллокаций промежуточных ``np.ndarray``.
+    """
+    N = pos.shape[0]
+    for i in prange(N):
+        xi = pos[i, 0]
+        yi = pos[i, 1]
+        vxi = vel[i, 0]
+        vyi = vel[i, 1]
+        ri = radius[i]
+        fi0 = 0.0
+        fi1 = 0.0
+        ti = 0.0
+        for j in range(i + 1, N):
+            dx = pos[j, 0] - xi
+            dy = pos[j, 1] - yi
+            rsum = ri + radius[j]
+            dist2 = dx * dx + dy * dy
+            if dist2 >= rsum * rsum:
+                continue
+            dist = np.sqrt(dist2)
+            if dist < 1e-12:
+                continue
+            inv_dist = 1.0 / dist
+            overlap = rsum - dist
+            nx = dx * inv_dist
+            ny = dy * inv_dist
+
+            # относительная скорость
+            rvx = vel[j, 0] - vxi
+            rvy = vel[j, 1] - vyi
+            overlap_rate = rvx * nx + rvy * ny
+
+            # касательное смещение (накопительно).
+            # В текущей 2D-модели относительная тангенциальная скорость
+            # численно равна нулю, поэтому приращение dt не используется.
+            td = tangential_disp[i, j] + 0.0 * dt
+            tangential_disp[i, j] = td
+
+            # нормальная сила
+            fn_scalar = kn * overlap + gamma_n * overlap_rate
+            fnx = fn_scalar * nx
+            fny = fn_scalar * ny
+
+            # касательная сила (Кулоновский предел)
+            ft_trial = -kt * td
+            abs_fn = fn_scalar if fn_scalar >= 0.0 else -fn_scalar
+            mu_abs = mu_s * abs_fn
+            if ft_trial > mu_abs:
+                ft_scalar = -mu_d * abs_fn
+            elif ft_trial < -mu_abs:
+                ft_scalar = mu_d * abs_fn
+            else:
+                ft_scalar = ft_trial
+
+            # тангенциальный вектор: перпендикуляр к нормали (2D)
+            ftx = -ft_scalar * ny
+            fty = ft_scalar * nx
+
+            fi0 += -(fnx + ftx)
+            fi1 += -(fny + fty)
+            force_out[j, 0] += fnx + ftx
+            force_out[j, 1] += fny + fty
+
+            # момент качения
+            rj = radius[j]
+            r_eff = (ri * rj) / (ri + rj)
+            omega_rel = ang_vel[i] - ang_vel[j]
+            if omega_rel > 0.0:
+                sign_omega = 1.0
+            elif omega_rel < 0.0:
+                sign_omega = -1.0
+            else:
+                sign_omega = 0.0
+            rolling_torque = -rolling_friction * abs_fn * r_eff * sign_omega
+            ti += rolling_torque
+            torque_out[j] += -rolling_torque
+
+        force_out[i, 0] += fi0
+        force_out[i, 1] += fi1
+        torque_out[i] += ti
+
+
+@njit(cache=True, fastmath=True)
+def _velocity_verlet_step(
+    pos,         # (N, 2)
+    vel,         # (N, 2)
+    ang_vel,     # (N,)
+    force,       # (N, 2)
+    torque,      # (N,)
+    mass,        # (N,)
+    inertia,     # (N,)
+    dt,
+):
+    """Один шаг Velocity Verlet без Python-циклов по частицам."""
+    N = pos.shape[0]
+
+    # ----- Полушаг скоростей -----
+    for i in range(N):
+        inv_m = 1.0 / mass[i]
+        inv_I = 1.0 / inertia[i]
+        ax = force[i, 0] * inv_m
+        ay = force[i, 1] * inv_m
+        alpha = torque[i] * inv_I
+        vel[i, 0] += 0.5 * ax * dt
+        vel[i, 1] += 0.5 * ay * dt
+        ang_vel[i] += 0.5 * alpha * dt
+
+    # ----- Обновление позиций -----
+    for i in range(N):
+        pos[i, 0] += vel[i, 0] * dt
+        pos[i, 1] += vel[i, 1] * dt
