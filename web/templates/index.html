@@ -10,6 +10,7 @@
         label { display: inline-block; width: 250px; }
         button { margin-top: 10px; padding: 6px 12px; }
         #progress { margin: 10px 0; }
+        #preview-container { border: 1px solid #888; margin: 10px 0; display: inline-block; background: #fafafa; }
     </style>
 </head>
 <body>
@@ -32,6 +33,10 @@
         <div class="form-group"><label>Общее время (с):</label><input type="number" step="0.5" id="total_time" value="5.0"></div>
         <button onclick="startSim()">Запустить</button>
         <button onclick="stopSim()">Стоп</button>
+    </div>
+    <h3>Предпросмотр геометрии</h3>
+    <div id="preview-container">
+        <canvas id="preview" width="500" height="500"></canvas>
     </div>
     <div id="progress">Прогресс: <span id="prog-val">0.0</span>%</div>
     <div id="traj-plot" style="width:800px;height:600px;"></div>
