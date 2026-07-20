@@ -31,6 +31,7 @@
         <div class="form-group"><label>Шаг по времени Δt (с):</label><input type="number" step="0.000001" id="dt" value="0.00001"></div>
         <div class="form-group"><label>Общее время (с):</label><input type="number" step="0.5" id="total_time" value="5.0"></div>
         <button onclick="startSim()">Запустить</button>
+        <button onclick="stopSim()">Стоп</button>
     </div>
     <div id="progress">Прогресс: <span id="prog-val">0.0</span>%</div>
     <div id="traj-plot" style="width:800px;height:600px;"></div>

@@ -1,3 +1,5 @@
+let currentSimId = 0;
+
 function startSim() {
     const data = {
         num_particles: document.getElementById('num_particles').value,
@@ -16,20 +18,25 @@ function startSim() {
         dt: document.getElementById('dt').value,
         total_time: document.getElementById('total_time').value
     };
+    currentSimId++;
     fetch('/start', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data)
+        body: JSON.stringify({...data, sim_id: currentSimId})
     }).then(r => r.json()).then(() => {
         pollStatus();
     }).catch(err => console.error('Start error:', err));
+}
+
+function stopSim() {
+    fetch('/stop', {method: 'POST'}).catch(err => console.error('Stop error:', err));
 }
 
 function pollStatus() {
     fetch('/status').then(r => r.json()).then(st => {
         document.getElementById('prog-val').innerText = st.progress.toFixed(1);
         if (st.running) {
-            setTimeout(pollStatus, 200);
+            setTimeout(pollStatus, 500);
         } else if (st.has_results) {
             loadResults();
         }

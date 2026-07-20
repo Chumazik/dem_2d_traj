@@ -13,7 +13,8 @@ sim_state = {
     "trajectories": None,
     "torque_history": None,
     "time": None,
-    "config": None
+    "config": None,
+    "sim_id": 0
 }
 sim_lock = threading.Lock()
 
@@ -31,21 +32,29 @@ def normalize_trajectories(traj):
         return traj
     return []
 
-def run_simulation(config: SimulationConfig):
+def run_simulation(config: SimulationConfig, sim_id: int):
     global sim_state
+    with sim_lock:
+        if sim_state["running"] and sim_state["sim_id"] != sim_id:
+            return
+        sim_state["running"] = True
+        sim_state["progress"] = 0.0
+        sim_state["sim_id"] = sim_id
+    
     sim = Simulation(config)
     total_steps = int(config.total_time / config.dt)
     step_count = 0
     t = 0.0
-    with sim_lock:
-        sim_state["running"] = True
-        sim_state["progress"] = 0.0
+    
     while t < config.total_time and not sim.stop_requested:
         sim.step()
         step_count += 1
         t += config.dt
         with sim_lock:
-            sim_state["progress"] = (step_count / total_steps) * 100.0
+            if not sim_state["running"] or sim_state["sim_id"] != sim_id:
+                break
+            sim_state["progress"] = min(100.0, (step_count / total_steps) * 100.0)
+    
     raw_traj = sim.get_trajectories()
     traj = normalize_trajectories(raw_traj)
     with sim_lock:
@@ -62,6 +71,7 @@ def index():
 @app.route("/start", methods=["POST"])
 def start():
     data = request.json
+    sim_id = data.get("sim_id", 0)
     config = SimulationConfig(
         num_particles=int(data.get("num_particles", 100)),
         particle_radius=float(data.get("particle_radius", 0.02)),
@@ -79,9 +89,17 @@ def start():
         dt=float(data.get("dt", 1e-5)),
         total_time=float(data.get("total_time", 5.0))
     )
-    thread = threading.Thread(target=run_simulation, args=(config,))
+    thread = threading.Thread(target=run_simulation, args=(config, sim_id))
     thread.start()
-    return jsonify({"status": "started"})
+    return jsonify({"status": "started", "sim_id": sim_id})
+
+@app.route("/stop", methods=["POST"])
+def stop():
+    with sim_lock:
+        if sim_state["running"]:
+            sim_state["running"] = False
+            return jsonify({"status": "stopped"})
+        return jsonify({"status": "not_running"})
 
 @app.route("/status")
 def status():
