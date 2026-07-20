@@ -17,6 +17,20 @@ sim_state = {
 }
 sim_lock = threading.Lock()
 
+def normalize_trajectories(traj):
+    """Приводим траектории к списку списков [x, y] по частицам."""
+    if traj is None:
+        return []
+    # Если это dict с частицами по id: {id: [[x,y],...]}
+    if isinstance(traj, dict):
+        return [list(pos_list) for pos_list in traj.values()]
+    # Если это список частиц с атрибутом history
+    if isinstance(traj, list):
+        if len(traj) > 0 and hasattr(traj[0], 'history'):
+            return [list(p.history) for p in traj]
+        return traj
+    return []
+
 def run_simulation(config: SimulationConfig):
     global sim_state
     sim = Simulation(config)
@@ -32,7 +46,8 @@ def run_simulation(config: SimulationConfig):
         t += config.dt
         with sim_lock:
             sim_state["progress"] = (step_count / total_steps) * 100.0
-    traj = sim.get_trajectories()
+    raw_traj = sim.get_trajectories()
+    traj = normalize_trajectories(raw_traj)
     with sim_lock:
         sim_state["running"] = False
         sim_state["trajectories"] = traj
