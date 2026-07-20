@@ -7,7 +7,6 @@ from .contact_model import ContactModel, Contact
 from .geometry import WallCircle, Lifter
 from .integrator import velocity_verlet_step
 from .force_calculation import compute_all_forces
-from .state import ParticleArrays
 from utils.config import SimulationConfig
 
 
@@ -22,8 +21,6 @@ class Simulation:
     torque_history: List[float] = field(default_factory=list)
     contacts: dict = field(default_factory=dict)
     stop_requested: bool = False
-    # SoA-представление частиц для пакетной обработки (Numba/GPU).
-    state: ParticleArrays = field(default=None)
 
     def __post_init__(self):
         self.contact_model = ContactModel(
@@ -37,8 +34,6 @@ class Simulation:
         )
         self.initialize_particles()
         self.initialize_boundaries()
-        # Построить SoA-состояние из списка Particle.
-        self.state = ParticleArrays.from_particles(self.particles)
 
     # --------------------------------------------------------------------- #
     # Инициализация
@@ -126,29 +121,25 @@ class Simulation:
     def step(self):
         """Выполняет один временной шаг и сохраняет реактивный момент.
 
-        Перед вызовом compute_all_forces SoA-состояние синхронизируется
-        с Particle (на случай, если какие-то поля менялись вне горячего
-        цикла), а после шага – обратно, чтобы get_trajectories и
-        LiveBuffer видели свежие pos/vel/ang_vel.
+        Последовательность:
+            1. Обновить текущий угол лифтеров/барабана (если есть).
+            2. Пересчитать силы и касательные смещения для всех контактов.
+            3. Сделать шаг Velocity Verlet (полушаг скоростей + позиции).
+            4. Обнулить накопленные ``force``/``torque`` (для следующего шага).
+            5. Снять показания реактивного момента с границ.
         """
         current_time = self.time[-1] if self.time else 0.0
         for b in self.boundaries:
             if hasattr(b, 'update_time'):
                 b.update_time(current_time)
 
-        # Синхронизация AoS -> SoA перед расчётом сил
-        if self.state is not None and self.state.N == len(self.particles):
-            self.state.sync_from_particles(self.particles)
-        else:
-            self.state = ParticleArrays.from_particles(self.particles)
+        self.contacts = compute_all_forces(
+            self.particles, self.boundaries, self.contact_model, self.contacts
+        )
 
-        self.contacts = compute_all_forces(self.particles, self.boundaries, self.contact_model, self.contacts)
-
-        velocity_verlet_step(self.particles, self.config.dt, self.contact_model, self.boundaries)
-
-        # Синхронизация SoA -> AoS после шага интегратора
-        if self.state is not None:
-            self.state.sync_to_particles(self.particles)
+        velocity_verlet_step(
+            self.particles, self.config.dt, self.contact_model, self.boundaries
+        )
 
         total_torque = 0.0
         for b in self.boundaries:
