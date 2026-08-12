@@ -13,6 +13,7 @@
 ## Gotchas
 - `requirements.txt` lists `flask` and `numba`, which are required at runtime. Keep it in sync with imports (`main.py`/`web/app.py` use Flask, `dem/jit_kernels/` uses numba).
 - `SimulationConfig` (`utils/config.py`) has both `use_jit: bool = True` (Numba JIT, default on) and `use_gpu: bool = False` (CuPy GPU). Compute backend is picked per call by `dem/force_calculation.py` and `dem/integrator.py` in this order: **GPU (CuPy) → Numba JIT → pure Python**. Falbacks are silent `try/except`. If CUDA is missing, `dem.gpu_backend.is_available()` returns `False` and the GPU branch is skipped.
+- `SimulationConfig.gravity: float = 9.81` (m/s²) is applied as a body force in `compute_all_forces`. Direction is along `+Y` in the simulation/canvas frame (which is "downward" on the page). `compute_all_forces` resets `particle.force` at the top before adding anything, so the gravity contribution does not stack on leftover integrator force from a previous step.
 - Nested `dem_project/` is a stale copy with its own `.git` — do not edit; the outer repo tracks it as untracked.
 
 ## Architecture

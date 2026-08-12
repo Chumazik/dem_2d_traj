@@ -102,7 +102,7 @@ class TestForceCalculationWithGpuMocked(unittest.TestCase):
             from utils.config import SimulationConfig
             from dem.contact_model import ContactModel
             from dem.force_calculation import compute_all_forces
-            cfg = SimulationConfig(use_gpu=True, num_particles=5)
+            cfg = SimulationConfig(use_gpu=True, num_particles=5, gravity=0.0)
             cm = ContactModel(kn=1e5, restitution_coeff=0.9,
                              mu_s=0.5, mu_d=0.4,
                              rolling_friction_coeff=0.01,
@@ -114,7 +114,7 @@ class TestForceCalculationWithGpuMocked(unittest.TestCase):
         # Contacts dict заполняется парными записями (для обратной совместимости):
         # C(5,2) = 10 пар.
         self.assertEqual(len(contacts), 10)
-        # Все силы должны быть ненулевыми (фиктивный GPU-bump)
+        # Все силы должны быть ненулевыми (фиктивный GPU-bump) с нулевой гравитацией.
         for p in particles:
             self.assertAlmostEqual(p.force[0], 1.0)
             self.assertAlmostEqual(p.force[1], -0.5)
@@ -127,7 +127,7 @@ class TestForceCalculationWithGpuMocked(unittest.TestCase):
             from utils.config import SimulationConfig
             from dem.contact_model import ContactModel
             from dem.force_calculation import compute_all_forces
-            cfg = SimulationConfig(use_gpu=False)  # явный CPU
+            cfg = SimulationConfig(use_gpu=False, gravity=0.0)  # явный CPU
             cm = ContactModel(kn=1e5, restitution_coeff=0.9,
                              mu_s=0.5, mu_d=0.4,
                              rolling_friction_coeff=0.0,
@@ -146,7 +146,7 @@ class TestForceCalculationWithGpuMocked(unittest.TestCase):
             from utils.config import SimulationConfig
             from dem.contact_model import ContactModel
             from dem.force_calculation import compute_all_forces
-            cfg = SimulationConfig(use_gpu=True)
+            cfg = SimulationConfig(use_gpu=True, gravity=0.0)
             cm = ContactModel(kn=1e5, restitution_coeff=0.9,
                              mu_s=0.5, mu_d=0.4,
                              rolling_friction_coeff=0.0,

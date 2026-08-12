@@ -20,6 +20,7 @@ function startSim() {
         rolling_friction: document.getElementById('rolling_friction').value,
         drum_radius:      document.getElementById('drum_radius').value,
         drum_omega:       document.getElementById('drum_omega').value,
+        gravity:          document.getElementById('gravity').value,
         lifter_height:    document.getElementById('lifter_height').value,
         lifter_width:     document.getElementById('lifter_width').value,
         num_lifters:      document.getElementById('num_lifters').value,

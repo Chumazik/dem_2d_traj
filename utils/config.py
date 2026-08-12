@@ -29,3 +29,4 @@ class SimulationConfig:
     total_time: float = 5.0                # с
     use_jit: bool = True                   # Numba-JIT интегратор (иначе чистый Python)
     use_gpu: bool = False                  # GPU (CuPy) для парных контактов и Verlet (фолбэк: Numba → CPU)
+    gravity: float = 9.81                  # м/с², действует вдоль +Y (направление «вниз» в системе координат канваса)

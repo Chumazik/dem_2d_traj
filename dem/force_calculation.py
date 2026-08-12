@@ -101,14 +101,24 @@ def _pairwise_python_loop(particles, contact_model: ContactModel,
 # ---------------------------------------------------------------------------
 def compute_all_forces(particles, boundaries, contact_model: ContactModel,
                        contacts=None):
-    """Полный расчёт сил: парные → автовыбор бэкенда; частица‑граница → CPU.
+    """Полный расчёт сил: парные → автовыбор бэкенда; частица‑граница → CPU;
+    гравитация → +Y.
 
     Контакты частица‑граница остаются на CPU из‑за разнородной геометрии.
     Возвращает словарь контактов (пополняется :class:`dem.contact_model.Contact`
     только для граничных пар).
+
+    Силовые аккумуляторы частиц (``force`` / ``torque``) обнуляются в начале —
+    это единственная точка, гарантирующая, что каждый вызов возвращает
+    чистые силы текущего шага (контакты + гравитация). Без сброса остатки
+    прошлого шага (например, от интегратора Verlet) накапливались бы с
+    гравитацией.
     """
     if contacts is None:
         contacts = {}
+
+    for p in particles:
+        p.reset_force()
 
     # --- Парные контакты: автовыбор GPU → Numba → Python ---
     if len(particles) >= 2:
@@ -116,22 +126,15 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel,
             try:
                 from . import gpu_backend
                 if gpu_backend.is_available():
-                    # Сбросить старые накопления сил перед GPU-проходом
-                    for p in particles:
-                        p.reset_force()
                     gpu_backend.compute_pairwise_forces_cupy(particles, contact_model)
-                    # Обновить contacts пустыми записями для последующей итерации
                     for i in range(len(particles)):
                         for j in range(i + 1, len(particles)):
                             key = (particles[i].id, particles[j].id)
                             if key not in contacts:
                                 contacts[key] = Contact(particles[i].id, particles[j].id)
             except Exception:
-                # мягкий фолбэк при любой ошибке GPU-пути
                 if _want_jit(contact_model):
                     try:
-                        for p in particles:
-                            p.reset_force()
                         compute_pairwise_forces(particles, contact_model)
                         for i in range(len(particles)):
                             for j in range(i + 1, len(particles)):
@@ -144,8 +147,6 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel,
                     _pairwise_python_loop(particles, contact_model, contacts)
         elif _want_jit(contact_model):
             try:
-                for p in particles:
-                    p.reset_force()
                 compute_pairwise_forces(particles, contact_model)
                 for i in range(len(particles)):
                     for j in range(i + 1, len(particles)):
@@ -185,6 +186,13 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel,
             p.apply_force(-fn_vec - ft_vec, torque_p)
             if isinstance(boundary, WallCircle):
                 boundary.apply_driving_torque(torque_p)
+
+    # --- Гравитация (внешняя сила, действует вдоль +Y) ---
+    cfg = getattr(contact_model, "config", None)
+    g_value = getattr(cfg, "gravity", 9.81) if cfg is not None else 9.81
+    if g_value is not None and g_value != 0.0:
+        for p in particles:
+            p.force[1] += p.mass * float(g_value)
 
     return contacts
 
