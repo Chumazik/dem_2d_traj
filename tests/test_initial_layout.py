@@ -138,5 +138,63 @@ class TestInitialParticleLayout(unittest.TestCase):
             )
 
 
+class TestNoParticleLifterOverlap(unittest.TestCase):
+    """При начальной генерации частицы НЕ должны накладываться на лифтеры."""
+
+    def _min_dist_to_lifter(self, pos, lifter):
+        pts = [lifter.p1, lifter.p2, lifter.p3, lifter.p4]
+        dmin = float("inf")
+        for k in range(4):
+            a, c = pts[k], pts[(k + 1) % 4]
+            cp = lifter._closest_point_on_segment(pos, a, c)
+            dmin = min(dmin, float(np.linalg.norm(pos - cp)))
+        return dmin
+
+    def test_no_particle_overlaps_lifter_default(self):
+        cfg = SimulationConfig(num_particles=100, num_lifters=4,
+                               lifter_height=0.04, lifter_width=0.02,
+                               drum_radius=0.5, particle_radius=0.02)
+        sim = Simulation(cfg)
+        from dem.geometry import Lifter
+        lifters = [b for b in sim.boundaries if isinstance(b, Lifter)]
+        self.assertEqual(len(lifters), 4)
+        r = cfg.particle_radius
+        for i, p in enumerate(sim.particles):
+            for L in lifters:
+                self.assertFalse(
+                    L._is_inside(p.pos),
+                    f"частица[{i}] внутри лифтера: pos={p.pos}",
+                )
+                dmin = self._min_dist_to_lifter(p.pos, L)
+                self.assertGreaterEqual(
+                    dmin, r - 1e-9,
+                    f"частица[{i}] перекрывает лифтер: pos={p.pos}, dist={dmin:.5f} < r={r}",
+                )
+
+    def test_no_particle_overlaps_lifter_various(self):
+        for nlift in (4, 6, 8):
+            for h in (0.03, 0.05, 0.08, 0.12):
+                cfg = SimulationConfig(num_particles=60, num_lifters=nlift,
+                                       lifter_height=h, lifter_width=0.02,
+                                       drum_radius=0.5, particle_radius=0.02)
+                sim = Simulation(cfg)
+                from dem.geometry import Lifter
+                lifters = [b for b in sim.boundaries if isinstance(b, Lifter)]
+                r = cfg.particle_radius
+                for p in sim.particles:
+                    for L in lifters:
+                        self.assertFalse(L._is_inside(p.pos))
+                        self.assertGreaterEqual(
+                            self._min_dist_to_lifter(p.pos, L), r - 1e-9,
+                        )
+
+    def test_particle_count_preserved_with_lifters(self):
+        cfg = SimulationConfig(num_particles=80, num_lifters=4,
+                               lifter_height=0.05, lifter_width=0.02,
+                               drum_radius=0.5, particle_radius=0.02)
+        sim = Simulation(cfg)
+        self.assertEqual(len(sim.particles), 80)
+
+
 if __name__ == "__main__":
     unittest.main()

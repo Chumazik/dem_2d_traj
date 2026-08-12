@@ -4,7 +4,7 @@
 
 ## Commands
 - Run app: `python main.py` → Flask dev server on http://localhost:5000
-- Tests: `python -m unittest discover -s tests -v` (57 tests, all pass)
+- Tests: `python -m unittest discover -s tests -v` (61 tests, all pass)
 - Profile the hot loop: `python -m bench.profile_sim` (slow: 200 particles × 5000 steps on the pure-Python O(N²) path)
 - Install reading extras once: `pip install xlrd` (for `instruct/Media Charge_Trajectories.xls`)
 - Install GPU extras (optional): `pip install cupy-cuda12x` (matching your CUDA toolkit) — without it, the UI's "GPU" mode silently falls back to Numba.
@@ -19,6 +19,7 @@
     * `angle_of_repose_deg: 35.0` — угол естественного откоса (определяет наклон верха кучи);
     * `apparent_mill_filling: 28.0` — % (определяет ширину основания кучи).
   Python-упаковка и JS-превью используют один и тот же алгоритм (settled hex heap), поэтому старт симуляции визуально совпадает с превью.
+- **Частицы не накладываются на лифтеры при старте.** ``Simulation.initialize_particles`` исключает позиции, перекрывающиеся с любым лифтером (проверка ``_overlaps_lifter``: центр внутри прямоугольника лифтера ИЛИ ближе радиуса частицы к его ребру). Для этого ``__post_init__`` сначала вызывает ``initialize_boundaries()`` (создаёт лифтеры), затем ``initialize_particles()``. JS-превью (``web/static/script.js``) делает то же самое через ``lifterWorldQuads``/``pointOverlapsQuad``. Проверяется тестом ``tests/test_initial_layout.py::TestNoParticleLifterOverlap``.
 
 ## Модельные инварианты (теоретическая проверка)
 

@@ -1,5 +1,6 @@
 let currentSimId = 0;
 let currentSimParams = null;            // входные параметры текущей симуляции
+let currentComputeMode = 'cpu_jit';     // cpu_jit | cpu | gpu
 let currentPartial = null;              // последний снимок /partial_results
 let partialPollTimer = null;            // таймер периодического опроса
 
@@ -10,25 +11,25 @@ const CANVAS_H = 600;
 function startSim() {
     const mode = document.getElementById('compute_mode').value;  // cpu_jit | cpu | gpu
     const data = {
-        num_particles:    document.getElementById('num_particles').value,
-        particle_radius:  document.getElementById('particle_radius').value,
-        particle_density: document.getElementById('particle_density').value,
-        kn:               document.getElementById('kn').value,
-        restitution:      document.getElementById('restitution').value,
-        friction_static:  document.getElementById('friction_static').value,
-        friction_dynamic: document.getElementById('friction_dynamic').value,
-        rolling_friction: document.getElementById('rolling_friction').value,
-        drum_radius:      document.getElementById('drum_radius').value,
-        drum_omega:       document.getElementById('drum_omega').value,
-        gravity:          document.getElementById('gravity').value,
+        num_particles:        document.getElementById('num_particles').value,
+        particle_radius:      document.getElementById('particle_radius').value,
+        particle_density:     document.getElementById('particle_density').value,
+        kn:                   document.getElementById('kn').value,
+        restitution:          document.getElementById('restitution').value,
+        friction_static:      document.getElementById('friction_static').value,
+        friction_dynamic:     document.getElementById('friction_dynamic').value,
+        rolling_friction:     document.getElementById('rolling_friction').value,
+        drum_radius:          document.getElementById('drum_radius').value,
+        drum_omega:           document.getElementById('drum_omega').value,
+        gravity:              document.getElementById('gravity').value,
         apparent_mill_filling: document.getElementById('apparent_mill_filling').value,
         angle_of_repose_deg:   document.getElementById('angle_of_repose_deg').value,
         gap_fraction:          document.getElementById('gap_fraction').value,
-        lifter_height:    document.getElementById('lifter_height').value,
-        lifter_width:     document.getElementById('lifter_width').value,
-        num_lifters:      document.getElementById('num_lifters').value,
-        dt:               document.getElementById('dt').value,
-        total_time:       document.getElementById('total_time').value,
+        lifter_height:        document.getElementById('lifter_height').value,
+        lifter_width:         document.getElementById('lifter_width').value,
+        num_lifters:          document.getElementById('num_lifters').value,
+        dt:                   document.getElementById('dt').value,
+        total_time:           document.getElementById('total_time').value,
         use_jit: mode !== 'cpu',
         use_gpu: mode === 'gpu',
     };
@@ -47,7 +48,11 @@ function startSim() {
     }).catch(err => console.error('Start error:', err));
 }
 
-let currentComputeMode = 'cpu_jit';
+function modeToLabel(mode) {
+    if (mode === 'gpu')   return 'GPU (CuPy)';
+    if (mode === 'cpu')   return 'CPU (чистый Python)';
+    return 'CPU (Numba JIT)';
+}
 
 function setComputeModeHint(resp) {
     const hint = document.getElementById('compute_mode_hint');
@@ -67,12 +72,6 @@ function setComputeModeHint(resp) {
     hint.textContent = msg;
 }
 
-function modeToLabel(mode) {
-    if (mode === 'gpu')   return 'GPU (CuPy)';
-    if (mode === 'cpu')   return 'CPU (чистый Python)';
-    return 'CPU (Numba JIT)';
-}
-
 function stopSim() {
     fetch('/stop', {method: 'POST'}).catch(err => console.error('Stop error:', err));
 }
@@ -85,7 +84,6 @@ function pollStatus() {
             setTimeout(pollStatus, 500);
         } else if (st.has_results) {
             stopPartialPolling();
-            // финальный кадр — последний известный partial
             drawLiveSnapshot(currentPartial);
             loadResults();
         }
@@ -130,7 +128,6 @@ function drawLiveSnapshot(body) {
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
 
-    // фон
     ctx.fillStyle = '#101820';
     ctx.fillRect(0, 0, W, H);
 
@@ -149,30 +146,26 @@ function drawLiveSnapshot(body) {
         if (body.trajectories) trajectories = body.trajectories;
     }
 
-    // Масштаб: в видимую область должны войти барабан + лифтеры + частицы
     const maxExt = p.drum_radius
         + Math.max(p.lifter_height, 0)
         + 2 * p.particle_radius
         + 0.05;
     const scale = Math.min(W, H) / (2 * maxExt);
     const cx = W / 2, cy = H / 2;
-    const toPx = m => cx + m * scale;        // смещение по x в пикселях (центрировано)
-    const toPy = m => cy - m * scale;        // здесь Y растёт вверх (математические оси)
-    const toPx_y = m => cy + m * scale;      // Y растёт вниз (как на канвасе)
+    const toPx = m => cx + m * scale;
+    const toPy = m => cy + m * scale;   // не используется напрямую, см. ниже
+    const toPx_y = m => cy + m * scale; // Y растёт вниз (как на канвасе)
 
-    // Барабан (окружность)
     ctx.strokeStyle = '#e0e0e0';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(cx, cy, p.drum_radius * scale, 0, 2 * Math.PI);
     ctx.stroke();
-    // Центр
     ctx.fillStyle = '#e0e0e0';
     ctx.beginPath();
     ctx.arc(cx, cy, 2, 0, 2 * Math.PI);
     ctx.fill();
 
-    // Лифтеры, повёрнутые по текущему углу
     if (p.num_lifters > 0 && p.lifter_height > 0 && p.lifter_width > 0) {
         ctx.fillStyle = '#a0522d';
         ctx.strokeStyle = '#5a2d0c';
@@ -182,19 +175,15 @@ function drawLiveSnapshot(body) {
             const ang = baseAngle + p.drum_omega * timeNow;
             const nx = Math.cos(ang);
             const ny = Math.sin(ang);
-            // Внешняя нижняя середина лифтера лежит ровно на окружности
-            // барабана (drum_radius не меняется от параметров лифтера).
             const ax = toPx(p.drum_radius * nx);
             const ay = toPx_y(p.drum_radius * ny);
             const halfW = p.lifter_width / 2;
-            // Тангенциальное направление: перпендикулярно нормали.
             const tx = -ny, ty = nx;
             const x1 = ax + (-halfW) * tx * scale;
             const y1 = ay + (-halfW) * ty * scale;
             const x2 = ax + ( halfW) * tx * scale;
             const y2 = ay + ( halfW) * ty * scale;
-            // Внутренние углы — на расстоянии lifter_height ВНУТРЬ барабана
-            // (минус по нормали, т.к. (nx,ny) направлен наружу).
+            // Внутренние углы — на расстоянии lifter_height ВНУТРЬ барабана.
             const x3 = x2 - p.lifter_height * nx * scale;
             const y3 = y2 - p.lifter_height * ny * scale;
             const x4 = x1 - p.lifter_height * nx * scale;
@@ -210,7 +199,6 @@ function drawLiveSnapshot(body) {
         }
     }
 
-    // Частицы: рисуем последнюю зафиксированную позицию
     const pr = Math.max(1, p.particle_radius * scale);
     ctx.fillStyle = 'rgba(120, 180, 235, 0.95)';
     ctx.strokeStyle = '#1c3f5a';
@@ -229,7 +217,6 @@ function drawLiveSnapshot(body) {
         }
     }
 
-    // Оверлей статуса
     drawStatusOverlay(ctx, W, H, {
         step, progress, t: timeNow, nPart: trajectories.length,
         maxForce: body.max_force ?? 0.0,
@@ -266,14 +253,17 @@ function drawStatusOverlay(ctx, W, H, info) {
 
 function parseSimParams(p) {
     return {
-        num_particles:   Math.max(0, Math.floor(parseFloat(p.num_particles) || 0)),
-        particle_radius: parseFloat(p.particle_radius) || 0,
+        num_particles:    Math.max(0, Math.floor(parseFloat(p.num_particles) || 0)),
+        particle_radius:  parseFloat(p.particle_radius) || 0,
         particle_density: parseFloat(p.particle_density) || 0,
-        drum_radius:     parseFloat(p.drum_radius) || 0,
-        drum_omega:      parseFloat(p.drum_omega) || 0,
-        lifter_height:   parseFloat(p.lifter_height) || 0,
-        lifter_width:    parseFloat(p.lifter_width) || 0,
-        num_lifters:     Math.max(0, Math.floor(parseFloat(p.num_lifters) || 0)),
+        drum_radius:      parseFloat(p.drum_radius) || 0,
+        drum_omega:       parseFloat(p.drum_omega) || 0,
+        lifter_height:    parseFloat(p.lifter_height) || 0,
+        lifter_width:     parseFloat(p.lifter_width) || 0,
+        num_lifters:      Math.max(0, Math.floor(parseFloat(p.num_lifters) || 0)),
+        apparent_mill_filling: (parseFloat(p.apparent_mill_filling) !== undefined && !isNaN(parseFloat(p.apparent_mill_filling))) ? parseFloat(p.apparent_mill_filling) : 28,
+        angle_of_repose_deg:   (parseFloat(p.angle_of_repose_deg) !== undefined && !isNaN(parseFloat(p.angle_of_repose_deg))) ? parseFloat(p.angle_of_repose_deg) : 35,
+        gap_fraction:          (parseFloat(p.gap_fraction) !== undefined && !isNaN(parseFloat(p.gap_fraction))) ? parseFloat(p.gap_fraction) : 0.05,
     };
 }
 
@@ -311,7 +301,7 @@ function loadResults() {
             Plotly.newPlot('torque-plot', [], {title: 'Приводной момент (нет данных)'});
         }
 
-        // Динамические показатели: max контактная сила и max скорость.
+        // Динамика: max контактная сила и max скорость.
         const dynPlot = document.getElementById('dynamics-plot');
         if (dynPlot && res.time && res.time.length > 0
             && res.max_force_history && res.max_velocity_history) {
@@ -338,8 +328,7 @@ function loadResults() {
                 {title: 'Динамика частиц (нет данных)'});
         }
 
-        // Финальный кадр живой отрисовки — последний сохранённый partial либо последние
-        // точки полной траектории
+        // Финальный кадр живой отрисовки.
         if (res.trajectories && res.trajectories.length > 0 && currentSimParams) {
             const lastT = res.time && res.time.length ? res.time[res.time.length - 1] : 0;
             drawLiveSnapshot({
@@ -365,16 +354,62 @@ const PREVIEW_IDS = [
 
 function readPreviewParams() {
     return parseSimParams({
-        num_particles:  document.getElementById('num_particles').value,
-        particle_radius: document.getElementById('particle_radius').value,
-        drum_radius:    document.getElementById('drum_radius').value,
-        lifter_height:  document.getElementById('lifter_height').value,
-        lifter_width:   document.getElementById('lifter_width').value,
-        num_lifters:    document.getElementById('num_lifters').value,
+        num_particles:         document.getElementById('num_particles').value,
+        particle_radius:       document.getElementById('particle_radius').value,
+        drum_radius:           document.getElementById('drum_radius').value,
+        lifter_height:         document.getElementById('lifter_height').value,
+        lifter_width:          document.getElementById('lifter_width').value,
+        num_lifters:           document.getElementById('num_lifters').value,
         apparent_mill_filling: document.getElementById('apparent_mill_filling').value,
         angle_of_repose_deg:   document.getElementById('angle_of_repose_deg').value,
         gap_fraction:          document.getElementById('gap_fraction').value,
     });
+}
+
+// Возвращает массивы вершин лифтеров в "мировых" координатах (метрах),
+// согласованно с отрисовкой ниже (базовый угол = 2π·i/N - π/2).
+function lifterWorldQuads(p) {
+    const quads = [];
+    if (!(p.num_lifters > 0 && p.lifter_height > 0 && p.lifter_width > 0)) return quads;
+    const R = p.drum_radius, h = p.lifter_height, halfW = p.lifter_width / 2;
+    for (let i = 0; i < p.num_lifters; i++) {
+        const ang = (2 * Math.PI * i) / p.num_lifters - Math.PI / 2;
+        const nx = Math.cos(ang), ny = Math.sin(ang);
+        const p1 = [R * nx + halfW * ny, R * ny - halfW * nx];
+        const p2 = [R * nx - halfW * ny, R * ny + halfW * nx];
+        const p3 = [p2[0] - h * nx, p2[1] - h * ny];
+        const p4 = [p1[0] - h * nx, p1[1] - h * ny];
+        quads.push([p1, p2, p3, p4]);
+    }
+    return quads;
+}
+
+// Точка-отрезок расстояние.
+function pointSegDist(px, py, ax, ay, bx, by) {
+    const abx = bx - ax, aby = by - ay;
+    const apx = px - ax, apy = py - ay;
+    const t = Math.max(0, Math.min(1,
+        (apx * abx + apy * aby) / (abx * abx + aby * aby || 1e-12)));
+    const cx = ax + t * abx, cy = ay + t * aby;
+    return Math.hypot(px - cx, py - cy);
+}
+
+// Точка-четырёхугольник: внутри ИЛИ ближе чем dist.
+function pointOverlapsQuad(px, py, quad, r) {
+    // принадлежность (ray casting, знак кросс-произведений)
+    let sign = null, inside = true;
+    for (let k = 0; k < 4; k++) {
+        const a = quad[k], b = quad[(k + 1) % 4];
+        const cross = (b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0]);
+        if (sign === null) sign = cross > 0;
+        else if ((cross > 0) !== sign) { inside = false; break; }
+    }
+    if (inside) return true;
+    for (let k = 0; k < 4; k++) {
+        const a = quad[k], b = quad[(k + 1) % 4];
+        if (pointSegDist(px, py, a[0], a[1], b[0], b[1]) < r) return true;
+    }
+    return false;
 }
 
 function updatePreview() {
@@ -405,9 +440,7 @@ function updatePreview() {
     ctx.arc(cx, cy, toPx(p.drum_radius), 0, Math.PI * 2);
     ctx.stroke();
 
-    // Лифтеры (статичные — предпросмотр; без вращения).
-    // Рисуются ВНУТРЬ барабана (минус по нормали), чтобы визуально
-    // занимать часть рабочей зоны, не увеличивая размер барабана.
+    // Лифтеры (статичные — предпросмотр; внутри барабана).
     if (p.num_lifters > 0 && p.lifter_height > 0 && p.lifter_width > 0) {
         ctx.fillStyle = '#a0522d';
         ctx.strokeStyle = '#5a2d0c';
@@ -422,7 +455,6 @@ function updatePreview() {
             const y1 = ay + toPx(-halfW * (nx));
             const x2 = ax + toPx( halfW * (-ny));
             const y2 = ay + toPx( halfW * (nx));
-            // Внутренние углы — ближе к центру барабана.
             const x3 = x2 - toPx(p.lifter_height * nx);
             const y3 = y2 - toPx(p.lifter_height * ny);
             const x4 = x1 - toPx(p.lifter_height * nx);
@@ -438,11 +470,12 @@ function updatePreview() {
         }
     }
 
-    // Частицы — показываем осевшее (settled) состояние у дна барабана.
+    // Частицы — осевшая куча у дна барабана; исключаем объёмы лифтеров.
     if (p.num_particles > 0 && p.particle_radius > 0) {
         const effectiveR = Math.max(0, p.drum_radius - p.particle_radius);
         if (effectiveR > 0) {
             const r = p.particle_radius;
+            const quads = lifterWorldQuads(p);
             const gapFrac = Math.max(
                 0, Math.min(0.3,
                     (parseFloat(p.gap_fraction) || 0.05)
@@ -474,10 +507,20 @@ function updatePreview() {
                 for (let x = -halfWidth - rowOffset; x <= halfWidth + 1e-9; x += spacing) {
                     if (placed >= p.num_particles) break;
                     if (x * x + yBase * yBase > effectiveR * effectiveR) continue;
+                    const wy = yBase;   // в мировой системе (Y вниз на канвасе)
+                    // Пропускаем позиции, перекрывающиеся с лифтерами.
+                    let overlapsLifter = false;
+                    for (let q = 0; q < quads.length; q++) {
+                        if (pointOverlapsQuad(x, wy, quads[q], r)) {
+                            overlapsLifter = true;
+                            break;
+                        }
+                    }
+                    if (overlapsLifter) continue;
                     ctx.beginPath();
                     ctx.arc(
                         cx + toPx(x + rowOffset),
-                        cy + toPx(yBase),
+                        cy + toPx(wy),
                         Math.max(1, toPx(r)),
                         0, Math.PI * 2
                     );

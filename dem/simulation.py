@@ -34,8 +34,11 @@ class Simulation:
             dt=self.config.dt,
             config=self.config
         )
-        self.initialize_particles()
+        # Сначала создаём границы (барабан + лифтеры), чтобы при генерации
+        # частиц можно было исключать объёмы лифтеров (частицы не должны
+        # накладываться на лифтеры на старте).
         self.initialize_boundaries()
+        self.initialize_particles()
 
     # --------------------------------------------------------------------- #
     # Инициализация
@@ -104,6 +107,9 @@ class Simulation:
                 if x * x + y_base * y_base > effective_R * effective_R:
                     continue
                 pos = np.array([x, y_base], dtype=float)
+                # Исключаем перекрытия с лифтерами (жёсткие тела внутри вращения).
+                if self._overlaps_lifter(pos):
+                    continue
                 self._add_particle_at(pos, id=count)
                 placed_coords.append(pos.copy())
                 count += 1
@@ -119,6 +125,9 @@ class Simulation:
             rad = np.random.rand() * (effective_R - r) + r
             pos = np.array([rad * math.cos(angle), rad * math.sin(angle)],
                            dtype=float)
+            # Исключаем перекрытия с лифтерами и с уже размещёнными частицами.
+            if self._overlaps_lifter(pos):
+                continue
             if any(np.linalg.norm(pos - p) < d * (1.0 + 0.5 * self.config.gap_fraction)
                    for p in placed_coords):
                 continue
@@ -143,6 +152,28 @@ class Simulation:
             history=[pos.copy()],
         )
         self.particles.append(particle)
+
+    def _overlaps_lifter(self, pos: np.ndarray) -> bool:
+        """``True``, если частица с центром в ``pos`` (радиус
+        ``self.config.particle_radius``) перекрывается с каким-либо лифтером.
+
+        Критерий согласован с ``Lifter.detect_collision``: перекрытие есть,
+        если центр частицы лежит внутри прямоугольника лифтера, либо
+        расстояние до ближайшего ребра лифтера меньше радиуса частицы.
+        """
+        r = self.config.particle_radius
+        for b in self.boundaries:
+            if not isinstance(b, Lifter):
+                continue
+            if b._is_inside(pos):
+                return True
+            pts = [b.p1, b.p2, b.p3, b.p4]
+            for k in range(4):
+                a, c = pts[k], pts[(k + 1) % 4]
+                closest = b._closest_point_on_segment(pos, a, c)
+                if float(np.linalg.norm(pos - closest)) < r - 1e-12:
+                    return True
+        return False
 
     def initialize_boundaries(self):
         """Создаёт границу – вращающийся барабан и лифтеры."""
