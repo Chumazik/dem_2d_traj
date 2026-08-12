@@ -40,17 +40,26 @@ class WallCircle(Boundary):
         vec = particle.pos - self.center
         dist = np.linalg.norm(vec)
 
-        if dist > self.radius + particle.radius:
+        # Контакт только когда поверхность частицы достигает/преодолевает
+        # ВНУТРЕННЮЮ границу барабана: R - r < dist < R + r.
+        #  - dist <= R - r: частица полностью внутри -> нет контакта;
+        #  - dist >= R + r: частица полностью снаружи -> нет контакта (выпала).
+        r_inner = self.radius - particle.radius
+        r_outer = self.radius + particle.radius
+        if dist <= r_inner or dist >= r_outer:
             return None  # нет контакта
 
-        overlap = self.radius + particle.radius - dist
+        # Величина взаимного проникновения поверхности частицы в стенку:
+        # overlap = dist + r - R  (>0 при контакте).
+        overlap = dist + particle.radius - self.radius
         if dist == 0.0:
-            # Если частица точно в центре, выбираем произвольное направление
+            # Если частица в центре (не должно случаться из-за условия выше),
+            # выбираем произвольное направление.
             normal = np.array([1.0, 0.0])
             contact_point = self.center + self.radius * normal
         else:
-            normal = vec / dist
-            contact_point = self.center + (self.radius / dist) * vec
+            normal = vec / dist             # наружу (от центра барабана)
+            contact_point = self.center + self.radius * normal
 
         # Скорость поверхности барабана в точке контакта
         surface_vel = np.array([-self.omega * (contact_point[1] - self.center[1]),

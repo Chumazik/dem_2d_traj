@@ -69,6 +69,33 @@ class TestLiveBuffer(unittest.TestCase):
         self.assertEqual(len(full1["trajectories"][0]), 3)
         self.assertEqual(len(full2["trajectories"][0]), 3)
 
+    def test_snapshot_contains_max_force_and_max_velocity(self):
+        lock = threading.RLock()
+        buf = LiveBuffer(lock=lock)
+        buf.reset(1)
+        p = _Particle(0.0, 0.0)
+        buf.append([p], 0.01, 0.5,
+                    running=True, progress=1.0, last_step=1,
+                    max_force=12.5, max_velocity=0.03)
+        snap = buf.snapshot()
+        self.assertIn("max_force", snap)
+        self.assertIn("max_velocity", snap)
+        self.assertAlmostEqual(snap["max_force"], 12.5)
+        self.assertAlmostEqual(snap["max_velocity"], 0.03)
+
+    def test_max_force_setters_are_safe_under_lock(self):
+        import concurrent.futures
+        lock = threading.RLock()
+        buf = LiveBuffer(lock=lock)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+            futures = [ex.submit(buf.set_max_force, k * 1.0) for k in range(50)]
+            [f.result(timeout=5) for f in futures]
+            futures2 = [ex.submit(buf.set_max_velocity, k * 0.01) for k in range(50)]
+            [f.result(timeout=5) for f in futures2]
+        # Должно быть установлено какое-то значение (последнее выигрывает).
+        self.assertIsInstance(buf.snapshot()["max_force"], float)
+        self.assertIsInstance(buf.snapshot()["max_velocity"], float)
+
     def test_snapshot_independent_under_lock(self):
         """snapshot() не должен захватывать lock навечно при вызове разных потоков."""
         import concurrent.futures

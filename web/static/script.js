@@ -232,17 +232,27 @@ function drawLiveSnapshot(body) {
     // Оверлей статуса
     drawStatusOverlay(ctx, W, H, {
         step, progress, t: timeNow, nPart: trajectories.length,
+        maxForce: body.max_force ?? 0.0,
+        maxVelocity: body.max_velocity ?? 0.0,
     });
 }
 
 function drawStatusOverlay(ctx, W, H, info) {
+    const fmt = (v, prec) => {
+        if (typeof v !== 'number' || isNaN(v)) return '—';
+        if (v === 0) return '0';
+        if (Math.abs(v) >= 1e4 || Math.abs(v) < 1e-3) return v.toExponential(2);
+        return v.toFixed(prec);
+    };
     const lines = [
         'Шаг: ' + info.step,
-        'Время: ' + info.t.toFixed(4) + ' с',
-        'Прогресс: ' + info.progress.toFixed(1) + ' %',
+        'Время: ' + fmt(info.t, 4) + ' с',
+        'Прогресс: ' + fmt(info.progress, 1) + ' %',
         'Частиц: ' + info.nPart,
+        'Max F: ' + fmt(info.maxForce, 2) + ' Н',
+        'Max V: ' + fmt(info.maxVelocity, 2) + ' м/с',
     ];
-    const w = 200, h = 18 + lines.length * 16;
+    const w = 230, h = 22 + lines.length * 16;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
     ctx.fillRect(12, 12, w, h);
     ctx.strokeStyle = '#999';
@@ -250,7 +260,7 @@ function drawStatusOverlay(ctx, W, H, info) {
     ctx.fillStyle = '#f0f0f0';
     ctx.font = '12px Consolas, monospace';
     for (let i = 0; i < lines.length; i++) {
-        ctx.fillText(lines[i], 22, 28 + i * 16);
+        ctx.fillText(lines[i], 22, 30 + i * 16);
     }
 }
 
@@ -301,14 +311,46 @@ function loadResults() {
             Plotly.newPlot('torque-plot', [], {title: 'Приводной момент (нет данных)'});
         }
 
+        // Динамические показатели: max контактная сила и max скорость.
+        const dynPlot = document.getElementById('dynamics-plot');
+        if (dynPlot && res.time && res.time.length > 0
+            && res.max_force_history && res.max_velocity_history) {
+            const traces = [
+                { x: res.time, y: res.max_force_history,
+                  mode: 'lines', name: 'Max |F| (Н)', yaxis: 'y1',
+                  line: {color: '#e67e22', width: 1.5} },
+                { x: res.time, y: res.max_velocity_history,
+                  mode: 'lines', name: 'Max |v| (м/с)', yaxis: 'y2',
+                  line: {color: '#2980b9', width: 1.5} },
+            ];
+            const layout = {
+                title: 'Макс. контактная сила и скорость частиц во времени',
+                xaxis: {title: 'Время (с)'},
+                yaxis: {title: 'Max |F| (Н)', side: 'left', color: '#e67e22'},
+                yaxis2: {title: 'Max |v| (м/с)', overlaying: 'y',
+                          side: 'right', color: '#2980b9'},
+                legend: {x: 0, y: 1.1, orientation: 'h'},
+                margin: {l: 50, r: 50, t: 50, b: 50},
+            };
+            Plotly.newPlot('dynamics-plot', traces, layout, {responsive: true});
+        } else if (dynPlot) {
+            Plotly.newPlot('dynamics-plot', [],
+                {title: 'Динамика частиц (нет данных)'});
+        }
+
         // Финальный кадр живой отрисовки — последний сохранённый partial либо последние
         // точки полной траектории
         if (res.trajectories && res.trajectories.length > 0 && currentSimParams) {
+            const lastT = res.time && res.time.length ? res.time[res.time.length - 1] : 0;
             drawLiveSnapshot({
-                time: res.time && res.time.length ? [res.time[res.time.length - 1]] : [],
+                time: res.time && res.time.length ? [lastT] : [],
                 progress: 100,
                 step: res.trajectories[0].length,
                 trajectories: res.trajectories.map(t => t.length ? [t[t.length - 1]] : []),
+                max_force: (res.max_force_history && res.max_force_history.length)
+                    ? res.max_force_history[res.max_force_history.length - 1] : 0,
+                max_velocity: (res.max_velocity_history && res.max_velocity_history.length)
+                    ? res.max_velocity_history[res.max_velocity_history.length - 1] : 0,
             });
         }
     }).catch(err => console.error('Load results error:', err));

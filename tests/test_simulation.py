@@ -97,5 +97,51 @@ class TestSimulation(unittest.TestCase):
         expected = base0 + 2.0 * 1e-5 * 50
         self.assertAlmostEqual(lifters[0].current_angle, expected, places=7)
 
+    def test_max_force_and_velocity_histories_are_recorded_per_step(self):
+        """Каждый step() должен добавлять по одному значению max |F| и max |v|
+        по всем частицам в соответствующие истории."""
+        cfg = SimulationConfig(num_particles=5, gravity=9.81, dt=1e-4)
+        sim = Simulation(cfg)
+        for _ in range(20):
+            sim.step()
+        # Истории имеют тот же размер, что и step_count.
+        self.assertEqual(len(sim.max_force_history), 20)
+        self.assertEqual(len(sim.max_velocity_history), 20)
+        # Все значения неотрицательные (нормы).
+        self.assertTrue(all(v >= 0 for v in sim.max_force_history))
+        self.assertTrue(all(v >= 0 for v in sim.max_velocity_history))
+        # Под гравитацией первая частица со временем ускоряется →
+        # max |v| должен быть неотрицательным и расти.
+        self.assertGreater(sim.max_velocity_history[-1], 0.0)
+        # Если частицы находятся в контакте (стенка или лифтеры), max |F| > 0.
+        # Свободное падение даст F=m·g для одной частицы.
+        self.assertGreater(sim.max_force_history[0], 0.0)
+
+    def test_max_force_reflects_largest_contact_over_all_particles(self):
+        """max |F| соответствует наибольшей силе, действующей на одну частицу."""
+        import numpy as np
+        cfg = SimulationConfig(num_particles=3, gravity=9.81, drum_radius=0.5)
+        sim = Simulation(cfg)
+        sim.step()
+        expected = max(
+            float(np.linalg.norm(p.force)) for p in sim.particles
+        )
+        self.assertAlmostEqual(
+            float(sim.max_force_history[0]), expected, places=8
+        )
+
+    def test_max_velocity_reflects_largest_speed_over_all_particles(self):
+        import numpy as np
+        cfg = SimulationConfig(num_particles=4, gravity=9.81, dt=1e-4)
+        sim = Simulation(cfg)
+        for _ in range(50):
+            sim.step()
+        expected = max(
+            float(np.linalg.norm(p.vel)) for p in sim.particles
+        )
+        self.assertAlmostEqual(
+            float(sim.max_velocity_history[-1]), expected, places=8
+        )
+
 if __name__ == '__main__':
     unittest.main()

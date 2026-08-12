@@ -58,10 +58,12 @@ def _pairwise_particle_forces(
             rvy = vel[j, 1] - vyi
             overlap_rate = rvx * nx + rvy * ny
 
-            # касательное смещение (накопительно).
-            # В текущей 2D-модели относительная тангенциальная скорость
-            # численно равна нулю, поэтому приращение dt не используется.
-            td = tangential_disp[i, j] + 0.0 * dt
+            # касательное смещение (накопительно) вдоль касательного направления.
+            # Раньше здесь было 0.0*dt (трение не накапливалось) - исправлено:
+            # тангенциальное смещение растёт как v_t * dt.
+            # Касательный вектор (2D): t = (-ny, nx), тангенц. скорость = rv·t.
+            tvx = rvx * (-ny) + rvy * nx
+            td = tangential_disp[i, j] + tvx * dt
             tangential_disp[i, j] = td
 
             # нормальная сила
@@ -70,7 +72,9 @@ def _pairwise_particle_forces(
             fny = fn_scalar * ny
 
             # касательная сила (Кулоновский предел)
-            ft_trial = -kt * td
+            # Согласовано с ContactModel.compute_forces:
+            # ft_trial = -kt*td - gamma_t*v_t (упругое + вязкое демпфирование).
+            ft_trial = -kt * td - gamma_t * tvx
             abs_fn = fn_scalar if fn_scalar >= 0.0 else -fn_scalar
             mu_abs = mu_s * abs_fn
             if ft_trial > mu_abs:

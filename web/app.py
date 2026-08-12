@@ -25,6 +25,8 @@ class SimState:
         self._sim_id: int = 0
         self._trajectories: Optional[list] = None
         self._torque_history: Optional[list] = None
+        self._max_force_history: Optional[list] = None
+        self._max_velocity_history: Optional[list] = None
         self._time: Optional[list] = None
         self._config: Optional[object] = None
         # Буфер разделяет единый лок с состоянием.
@@ -68,7 +70,8 @@ class SimState:
             self._time = None
             return True
 
-    def finalize(self, *, trajectories, torque_history, time, config) -> None:
+    def finalize(self, *, trajectories, torque_history, time, config,
+                max_force_history, max_velocity_history) -> None:
         """Финализирует симуляцию: записывает результаты и снимает флаг."""
         with self._lock:
             self._running = False
@@ -76,9 +79,15 @@ class SimState:
             self._trajectories = trajectories
             self._torque_history = torque_history
             self._time = time
+            self._max_force_history = list(max_force_history)
+            self._max_velocity_history = list(max_velocity_history)
             self._config = config
             self._buffer.mark_running(False)
             self._buffer.set_progress(100.0)
+            self._buffer.set_max_force(float(max_force_history[-1]) if max_force_history else 0.0)
+            self._buffer.set_max_velocity(
+                float(max_velocity_history[-1]) if max_velocity_history else 0.0
+            )
 
     # ----- Снимки под единым локом ----- #
     def status_snapshot(self) -> dict:
@@ -97,6 +106,8 @@ class SimState:
             return {
                 "trajectories": self._trajectories,
                 "torque_history": self._torque_history or [],
+                "max_force_history": self._max_force_history or [],
+                "max_velocity_history": self._max_velocity_history or [],
                 "time": self._time or [],
                 "config": self._config.__dict__ if self._config else {},
             }
@@ -117,11 +128,13 @@ class SimState:
             self._buffer.mark_running(True)
 
     def append_point(self, particles, t, torque,
-                     step: int, progress: float, running: bool) -> None:
+                     step: int, progress: float, running: bool,
+                     max_force: float = 0.0, max_velocity: float = 0.0) -> None:
         """Атомарно: добавляет точку и обновляет метаданные."""
         with self._lock:
             self._buffer.append(particles, t, torque,
-                                running=running, progress=progress, last_step=step)
+                                running=running, progress=progress, last_step=step,
+                                max_force=max_force, max_velocity=max_velocity)
             self._progress = progress
             self._running = running
 
@@ -175,11 +188,24 @@ def run_simulation(config: SimulationConfig, sim_id: int):
         elif hasattr(sim, "torque"):
             torque_now = sim.torque
 
+        # Мгновенные показатели нагрузки и скорости: максимум |F| и |v| по
+        # всем частицам (см. dem/simulation.py::step).
+        max_force_now = (
+            float(sim.max_force_history[-1])
+            if getattr(sim, "max_force_history", None) else 0.0
+        )
+        max_velocity_now = (
+            float(sim.max_velocity_history[-1])
+            if getattr(sim, "max_velocity_history", None) else 0.0
+        )
+
         progress = min(100.0, (step_count / total_steps) * 100.0)
         # Атомарное обновление буфера и метаданных под единым локом
         state.append_point(particles, t, torque_now,
                            step=step_count, progress=progress,
-                           running=state.should_continue(sim_id))
+                           running=state.should_continue(sim_id),
+                           max_force=max_force_now,
+                           max_velocity=max_velocity_now)
 
     raw_traj = sim.get_trajectories()
     traj = normalize_trajectories(raw_traj)
@@ -187,6 +213,8 @@ def run_simulation(config: SimulationConfig, sim_id: int):
         trajectories=traj,
         torque_history=sim.torque_history if hasattr(sim, "torque_history") else [],
         time=sim.time if hasattr(sim, "time") else [],
+        max_force_history=getattr(sim, "max_force_history", []) or [],
+        max_velocity_history=getattr(sim, "max_velocity_history", []) or [],
         config=config,
     )
 

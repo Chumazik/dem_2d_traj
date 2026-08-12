@@ -4,7 +4,7 @@
 
 ## Commands
 - Run app: `python main.py` → Flask dev server on http://localhost:5000
-- Tests: `python -m unittest discover -s tests -v` (52 tests, all pass)
+- Tests: `python -m unittest discover -s tests -v` (57 tests, all pass)
 - Profile the hot loop: `python -m bench.profile_sim` (slow: 200 particles × 5000 steps on the pure-Python O(N²) path)
 - Install reading extras once: `pip install xlrd` (for `instruct/Media Charge_Trajectories.xls`)
 - Install GPU extras (optional): `pip install cupy-cuda12x` (matching your CUDA toolkit) — without it, the UI's "GPU" mode silently falls back to Numba.
@@ -43,6 +43,22 @@
   частице только нормальную силу, направленную ВНУТРЬ барабана; никакого
   внешнего "толчка" вдоль оси вращения нет ({field}[ ``WallCircle`` /
   ``Lifter``] не имеет метода вроде ``apply_external_force``).
+- **Контакт «частица–барабан»** в ``WallCircle.detect_collision`` срабатывает
+  только когда поверхность частицы достигает ВНУТРЕННЕЙ стенки:
+  ``R - r < dist < R + r``, где ``overlap = dist + r - R``. Пока центр
+  частицы находится строго внутри (``dist <= R - r``) — контакта нет.
+  Раньше здесь использовался заведомо неверный ``overlap = R + r - dist``
+  с условием ``dist <= R + r``, из-за чего «сидящая» на стенке частица
+  получала ложное перекрытие на полный радиус и нефизичный энерговброс
+  (разлет частиц, скорости ~200 м/с, силы ~200 кН). Исправлено.
+- **Тангенциальное (статическое/кинетическое) трение** в парных контактах
+  накапливает касательное смещение ``td += v_t·dt`` вдоль касательного
+  направления; касательная сила = ``−k_t·td − γ_t·v_t`` с кулоновским
+  пределом ``μ·|F_n|``. Исправлено и в Numba-ядре
+  ``dem/jit_kernels/pairwise.py``, и в Python-путях
+  (``_pairwise_python_loop``, ``_compute_pairwise_forces_python``) — JIT и
+  Python-пути согласованы (даёт одинаковую силу трения). Раньше в Numba-ядре
+  накопления не было (``0.0*dt``) и не было вязкого члена ``−γ_t·v_t``.
 
 Библиография по теории: сопр. документы в ``instruct/``, см. также
 [Wikipedia: Discrete element method](https://en.wikipedia.org/wiki/Discrete_element_method)
@@ -59,7 +75,7 @@
 - Analytical module (`dem/analytical.py`) reproduces the inputs/outputs of `instruct/Media Charge_Trajectories.xls` (Moly-Cop Tools): critical/operating speed, shoulder breakaway, parabolic flight, impact point/velocity/energy, filling-based kidney/toe/clock, torque + power. Classical breakaway (`acos φ²`) and shoulder angles from the spreadsheet differ because the spreadsheet's lift-off model includes rolling + sliding on the lifter (Moly-Cop proprietary, computed via Solver). Numerical match should hold for `critical_speed_rpm`, `impact_speed_ft_s`, `impact_kinetic_energy_joules`; see `diff_vs_molycop` field in the response for a per-metric comparison.
 - `web/` Flask app: `app.py` runs the simulation in a background thread; `SimState` + `LiveBuffer` share a single `threading.RLock`; endpoints: `/` (page with two tabs), `/start` (accepts `use_jit`, `use_gpu`, `gravity`), `/stop`, `/status`, `/partial_results` (accepts optional `tail=N` to return only the last N frames — used by the live canvas), `/results`, **`/analytical` (POST)** — accepts JSON with the Moly-Cop input set and returns the full `dem.analytical.AnalyticalOutputs` (~60 fields + a 41-point trajectory).
 - UI has two tabs: "DEM симуляция" (existing) and "Аналитика траекторий" (form + Plotly trajectory plot + results/diff tables).
-- The DEM tab's `#preview` canvas is a geometry preview before launching, and is **automatically replaced by a live simulation viewer** while a run is in progress — it polls `/partial_results?tail=1` every 250 ms and renders drum circle, rotated lifters (`base_angle + drum_omega * timeNow`), and the latest particle positions with a step/progress/time HUD overlay. Plotly plots (`#traj-plot`, `#torque-plot`) still show the full trajectory/moment history after the run finishes.
+- The DEM tab's `#preview` canvas is a geometry preview before launching, and is **automatically replaced by a live simulation viewer** while a run is in progress — it polls `/partial_results?tail=1` every 250 ms and renders drum circle, rotated lifters (`base_angle + drum_omega * timeNow`), and the latest particle positions with a step/progress/time/max-contact-force/max-speed HUD overlay. Plotly plots (`#traj-plot`, `#torque-plot`, `#dynamics-plot`) still show the full trajectory/moment/dynamics history after the run finishes.
 - Lifters are drawn **inside the drum** (anchored on the drum surface, extending inward by `lifter_height`). Static-preview particle packing illustrates a settled-at-bottom heap whose width respects the apparent mill filling % and whose slope respects `angle_of_repose_deg`.
 - The DEM tab has a "Вычислитель" select with three options: `cpu_jit` (default, Numba JIT), `cpu` (pure Python), `gpu` (CuPy with auto-fallback to Numba). The selected mode is sent to `/start` as `use_jit`+`use_gpu`; the response echo + `gpu_available` flag is shown next to the dropdown.
 - `gui/` is the legacy PyQt5 GUI (unused by `main.py`); `bench/` profiling; `utils/config.py` defines `SimulationConfig`. `instruct/recom` has pending optimization notes for `web/live_buffer.py`.

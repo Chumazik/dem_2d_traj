@@ -27,6 +27,8 @@ class LiveBuffer:
             self._trajectories: List[List[List[float]]] = [[] for _ in range(int(num_particles))]
             self._time: List[float] = []
             self._torque: List[float] = []
+            self._max_force: float = 0.0
+            self._max_velocity: float = 0.0
             self._last_step: int = 0
             self._progress: float = 0.0
             self._running: bool = False
@@ -42,6 +44,14 @@ class LiveBuffer:
     def set_last_step(self, step: int) -> None:
         with self._lock:
             self._last_step = int(step)
+
+    def set_max_force(self, max_force: float) -> None:
+        with self._lock:
+            self._max_force = float(max_force)
+
+    def set_max_velocity(self, max_velocity: float) -> None:
+        with self._lock:
+            self._max_velocity = float(max_velocity)
 
     def update_status(self, running: Optional[bool] = None,
                       progress: Optional[float] = None,
@@ -63,6 +73,8 @@ class LiveBuffer:
         running: Optional[bool] = None,
         progress: Optional[float] = None,
         last_step: Optional[int] = None,
+        max_force: Optional[float] = None,
+        max_velocity: Optional[float] = None,
     ) -> None:
         """Дописывает текущую позицию каждой частицы и значения t/torque.
 
@@ -99,6 +111,10 @@ class LiveBuffer:
                 self._progress = float(progress)
             if last_step is not None:
                 self._last_step = int(last_step)
+            if max_force is not None:
+                self._max_force = float(max_force)
+            if max_velocity is not None:
+                self._max_velocity = float(max_velocity)
 
     def snapshot(self, tail: int = 0) -> dict:
         """Возвращает JSON-сериализуемый снимок текущего состояния буфера.
@@ -120,6 +136,8 @@ class LiveBuffer:
                 "trajectories": t_traj,
                 "time": t_time,
                 "torque_history": t_torque,
+                "max_force": self._max_force,
+                "max_velocity": self._max_velocity,
                 "step": self._last_step,
                 "progress": self._progress,
                 "running": self._running,

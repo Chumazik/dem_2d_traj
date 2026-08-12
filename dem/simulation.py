@@ -19,6 +19,8 @@ class Simulation:
     contact_model: ContactModel = None
     time: List[float] = field(default_factory=list)
     torque_history: List[float] = field(default_factory=list)
+    max_force_history: List[float] = field(default_factory=list)
+    max_velocity_history: List[float] = field(default_factory=list)
     contacts: dict = field(default_factory=dict)
     stop_requested: bool = False
 
@@ -199,6 +201,13 @@ class Simulation:
             self.particles, self.config.dt, self.contact_model, self.boundaries
         )
 
+        # Внутреннее время было уже продвинуто выше; синхронизируем момент
+        # барабана/лифтеров ещё раз после интегрирования, чтобы отрисовка
+        # в live-канвасе соответствовала актуальной позиции частиц.
+        for b in self.boundaries:
+            if hasattr(b, 'update_time'):
+                b.update_time(current_time)
+
         total_torque = 0.0
         for b in self.boundaries:
             if hasattr(b, 'applied_torque'):
@@ -207,6 +216,22 @@ class Simulation:
                 
         self.torque_history.append(-total_torque)
         self.time.append(current_time)
+
+        # Мгновенные показатели нагрузки и скорости (для live-UI и графиков).
+        if self.particles:
+            max_f = max(
+                (float(p.force[0]) ** 2 + float(p.force[1]) ** 2) ** 0.5
+                for p in self.particles
+            )
+            max_v = max(
+                (float(p.vel[0]) ** 2 + float(p.vel[1]) ** 2) ** 0.5
+                for p in self.particles
+            )
+        else:
+            max_f = 0.0
+            max_v = 0.0
+        self.max_force_history.append(max_f)
+        self.max_velocity_history.append(max_v)
 
     def run(self):
         """Запускает симуляцию до достижения total_time."""

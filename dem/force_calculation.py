@@ -70,22 +70,25 @@ def _pairwise_python_loop(particles, contact_model: ContactModel,
 
             rel_vel = pj.vel - pi.vel
             overlap_rate = float(np.dot(rel_vel, normal))
-            tangential_velocity = rel_vel - overlap_rate * normal
+            # Касательный вектор (2D): перпендикуляр к нормали.
+            tangent = np.array([-normal[1], normal[0]], dtype=float)
+            rel_vel_tang = float(np.dot(rel_vel, tangent))  # тангенц. скорость (скаляр)
 
             contact_key = (pi.id, pj.id)
             if contact_key not in contacts:
                 contacts[contact_key] = Contact(pi.id, pj.id)
             contact = contacts[contact_key]
+            # Накопление касательного смещения вдоль касательного направления.
             tangential_displacement = (
                 contact.tangential_displacement
-                + float(np.dot(tangential_velocity, normal)) * contact_model.dt
+                + rel_vel_tang * contact_model.dt
             )
             effective_radius = (pi.radius * pj.radius) / (pi.radius + pj.radius)
 
             fn_vec, ft_vec, torque_i, torque_j = contact_model.compute_forces(
                 overlap, overlap_rate,
                 tangential_displacement,
-                float(np.dot(tangential_velocity, normal)),
+                rel_vel_tang,
                 effective_radius, normal, pi, pj,
             )
 
@@ -319,12 +322,12 @@ def _compute_pairwise_forces_python(
                 inv_dist = 1.0 / dist
             rel = pj.vel - pi.vel
             overlap_rate = float(np.dot(rel, normal))
-            tangential_velocity = rel - overlap_rate * normal
+            # Касательный вектор (2D).
+            tangent = np.array([-normal[1], normal[0]], dtype=float)
+            rel_vel_tang = float(np.dot(rel, tangent))
 
-            # не наращиваем tangential_disp последовательно (Numba-ядро этого не делает),
-            # но поддерживаем симметричную матрицу для совместимости.
-            xi = float(np.dot(tangential_velocity, normal)) * dt
-            tangential_disp[i, j] += xi
+            # Накопление касательного смещения вдоль касательного направления.
+            tangential_disp[i, j] += rel_vel_tang * dt
             tangential_disp[j, i] = -tangential_disp[i, j]
 
             r_eff = (float(pi.radius) * float(pj.radius)) / radius_sum
@@ -332,7 +335,7 @@ def _compute_pairwise_forces_python(
             fn_vec, ft_vec, torque_i, torque_j = contact_model.compute_forces(
                 overlap, overlap_rate,
                 tangential_disp[i, j],
-                float(np.dot(tangential_velocity, normal)),
+                rel_vel_tang,
                 r_eff, normal, pi, pj,
             )
 

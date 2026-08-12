@@ -117,10 +117,11 @@ class TestForcesInventory(unittest.TestCase):
         )
 
     def test_wall_contact_only_inward(self):
-        """Частица внутри барабана должна чувствовать СИЛУ, направленную
+        """Частица в контакте с барабаном должна чувствовать СИЛУ, направленную
         ВНУТРЬ (т.е. -normal). Никаких "external push" вдоль оси вращения."""
-        # Частица чуть внутри барабана (0.40 от центра при R=0.5, overlap = 0.12).
-        p = _make_particle(mass=1.0, pos=(0.40, 0.0), vel=(0.0, 0.0))
+        # Частица контактирует со стенкой: pos x=0.49, R=0.5, r=0.02.
+        # dist=0.49 > R-r=0.48 -> контакт, overlap = 0.49+0.02-0.5 = 0.01.
+        p = _make_particle(mass=1.0, pos=(0.49, 0.0), vel=(0.0, 0.0))
         cfg = SimulationConfig(gravity=0.0)
         cm = ContactModel(
             kn=1e5, restitution_coeff=0.9, mu_s=0.5, mu_d=0.4,
@@ -131,7 +132,7 @@ class TestForcesInventory(unittest.TestCase):
         # Стенка неподвижна (omega=0), поверхностной скорости нет;
         # относительной тангенциальной == 0; единственная стеночная сила —
         # упругая нормальная, направленная ВНУТРЬ барабана (т.е. -normal).
-        # Позиция x=+0.40, drum center=0, normal = (+x). Внутренняя сила = -x.
+        # Позиция x=+0.49, drum center=0, normal = (+x). Внутренняя сила = -x.
         self.assertLess(float(p.force[0]), 0.0)
         self.assertAlmostEqual(float(p.force[1]), 0.0, places=6)
 
