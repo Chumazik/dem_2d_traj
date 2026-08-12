@@ -100,13 +100,26 @@ class LiveBuffer:
             if last_step is not None:
                 self._last_step = int(last_step)
 
-    def snapshot(self) -> dict:
-        """Возвращает JSON-сериализуемый снимок текущего состояния буфера."""
+    def snapshot(self, tail: int = 0) -> dict:
+        """Возвращает JSON-сериализуемый снимок текущего состояния буфера.
+
+        Параметр ``tail`` (если >0) обрезает каждую траекторию и
+        массивы ``time``/``torque_history`` до последних ``tail`` отсчётов.
+        Полезно для живой отрисовки, чтобы не передавать всю историю по сети.
+        """
         with self._lock:
+            if tail and tail > 0:
+                t_traj = [list(traj[-tail:]) for traj in self._trajectories]
+                t_time = list(self._time[-tail:])
+                t_torque = list(self._torque[-tail:])
+            else:
+                t_traj = [list(traj) for traj in self._trajectories]
+                t_time = list(self._time)
+                t_torque = list(self._torque)
             return {
-                "trajectories": [list(traj) for traj in self._trajectories],
-                "time": list(self._time),
-                "torque_history": list(self._torque),
+                "trajectories": t_traj,
+                "time": t_time,
+                "torque_history": t_torque,
                 "step": self._last_step,
                 "progress": self._progress,
                 "running": self._running,

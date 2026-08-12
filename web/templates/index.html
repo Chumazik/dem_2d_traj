@@ -11,36 +11,115 @@
         button { margin-top: 10px; padding: 6px 12px; }
         #progress { margin: 10px 0; }
         #preview-container { border: 1px solid #888; margin: 10px 0; display: inline-block; background: #fafafa; }
+        /* Tabs */
+        .tabs { margin-top: 16px; }
+        .tablinks { background: #eee; border: 1px solid #888; padding: 8px 16px; cursor: pointer; }
+        .tablinks.active { background: #fff; font-weight: bold; }
+        .tabcontent { border: 1px solid #888; border-top: none; padding: 16px; background: #fff; }
+        .tabcontent.hidden { display: none; }
+        /* Analytical */
+        .an-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .an-grid > div { min-width: 0; }
+        #analytical-table { border-collapse: collapse; font-size: 0.92em; }
+        #analytical-table td, #analytical-table th { border: 1px solid #888; padding: 3px 8px; text-align: left; }
+        #analytical-table th { background: #f0f0f0; }
+        #analytical-table td.num { text-align: right; font-family: 'Consolas', monospace; }
+        #diff-table { color: #444; font-style: italic; }
+        #analytical-plot { width: 100%; max-width: 800px; height: 600px; }
     </style>
 </head>
 <body>
-    <h1>Параметры симуляции DEM</h1>
-    <div id="input-form">
-        <div class="form-group"><label>Количество частиц:</label><input type="number" id="num_particles" value="100"></div>
-        <div class="form-group"><label>Радиус частицы (м):</label><input type="number" step="0.001" id="particle_radius" value="0.02"></div>
-        <div class="form-group"><label>Плотность (кг/м³):</label><input type="number" step="100" id="particle_density" value="2500"></div>
-        <div class="form-group"><label>Жёсткость Kn (N/m):</label><input type="number" step="10000" id="kn" value="100000"></div>
-        <div class="form-group"><label>Коэффициент восстановления:</label><input type="number" step="0.05" id="restitution" value="0.9"></div>
-        <div class="form-group"><label>Статическое трение μs:</label><input type="number" step="0.05" id="friction_static" value="0.5"></div>
-        <div class="form-group"><label>Динамическое трение μd:</label><input type="number" step="0.05" id="friction_dynamic" value="0.4"></div>
-        <div class="form-group"><label>Коэффициент качения μr:</label><input type="number" step="0.001" id="rolling_friction" value="0.01"></div>
-        <div class="form-group"><label>Радиус барабана (м):</label><input type="number" step="0.01" id="drum_radius" value="0.5"></div>
-        <div class="form-group"><label>Угловая скорость (рад/с):</label><input type="number" step="0.1" id="drum_omega" value="2.0"></div>
-        <div class="form-group"><label>Высота лифтеров (м):</label><input type="number" step="0.01" id="lifter_height" value="0.0"></div>
-        <div class="form-group"><label>Ширина лифтеров (м):</label><input type="number" step="0.005" id="lifter_width" value="0.02"></div>
-        <div class="form-group"><label>Количество лифтеров:</label><input type="number" id="num_lifters" value="0"></div>
-        <div class="form-group"><label>Шаг по времени Δt (с):</label><input type="number" step="0.000001" id="dt" value="0.00001"></div>
-        <div class="form-group"><label>Общее время (с):</label><input type="number" step="0.5" id="total_time" value="5.0"></div>
-        <button onclick="startSim()">Запустить</button>
-        <button onclick="stopSim()">Стоп</button>
+    <h1>2D DEM Simulation</h1>
+    <div class="tabs">
+        <button id="tab-btn-dem" class="tablinks active" data-tab="tab-dem">DEM симуляция</button>
+        <button id="tab-btn-analytical" class="tablinks" data-tab="tab-analytical">Аналитика траекторий</button>
     </div>
-    <h3>Предпросмотр геометрии</h3>
-    <div id="preview-container">
-        <canvas id="preview" width="500" height="500"></canvas>
+
+    <!-- ========== DEM tab ========== -->
+    <div id="tab-dem" class="tabcontent">
+        <h2>Параметры симуляции DEM</h2>
+        <div id="input-form">
+            <div class="form-group"><label>Количество частиц:</label><input type="number" id="num_particles" value="100"></div>
+            <div class="form-group"><label>Радиус частицы (м):</label><input type="number" step="0.001" id="particle_radius" value="0.02"></div>
+            <div class="form-group"><label>Плотность (кг/м³):</label><input type="number" step="100" id="particle_density" value="2500"></div>
+            <div class="form-group"><label>Жёсткость Kn (N/m):</label><input type="number" step="10000" id="kn" value="100000"></div>
+            <div class="form-group"><label>Коэффициент восстановления:</label><input type="number" step="0.05" id="restitution" value="0.9"></div>
+            <div class="form-group"><label>Статическое трение μs:</label><input type="number" step="0.05" id="friction_static" value="0.5"></div>
+            <div class="form-group"><label>Динамическое трение μd:</label><input type="number" step="0.05" id="friction_dynamic" value="0.4"></div>
+            <div class="form-group"><label>Коэффициент качения μr:</label><input type="number" step="0.001" id="rolling_friction" value="0.01"></div>
+            <div class="form-group"><label>Радиус барабана (м):</label><input type="number" step="0.01" id="drum_radius" value="0.5"></div>
+            <div class="form-group"><label>Угловая скорость (рад/с):</label><input type="number" step="0.1" id="drum_omega" value="2.0"></div>
+            <div class="form-group"><label>Высота лифтеров (м):</label><input type="number" step="0.01" id="lifter_height" value="0.0"></div>
+            <div class="form-group"><label>Ширина лифтеров (м):</label><input type="number" step="0.005" id="lifter_width" value="0.02"></div>
+            <div class="form-group"><label>Количество лифтеров:</label><input type="number" id="num_lifters" value="0"></div>
+            <div class="form-group"><label>Шаг по времени Δt (с):</label><input type="number" step="0.000001" id="dt" value="0.00001"></div>
+            <div class="form-group"><label>Общее время (с):</label><input type="number" step="0.5" id="total_time" value="5.0"></div>
+            <fieldset style="margin:10px 0;padding:8px;border:1px solid #888;">
+                <legend>Вычислитель</legend>
+                <div class="form-group">
+                    <label>Режим:</label>
+                    <select id="compute_mode">
+                        <option value="cpu_jit">CPU (Numba JIT)</option>
+                        <option value="cpu">CPU (чистый Python)</option>
+                        <option value="gpu">GPU (CuPy) — автофолбэк на Numba</option>
+                    </select>
+                </div>
+                <div class="form-group" style="font-size:0.85em;color:#555;">
+                    <span id="compute_mode_hint">Numba JIT активен по умолчанию; GPU требует установленного CuPy с CUDA.</span>
+                </div>
+            </fieldset>
+            <button onclick="startSim()">Запустить</button>
+            <button onclick="stopSim()">Стоп</button>
+        </div>
+        <h3>Предпросмотр геометрии</h3>
+        <div id="preview-container">
+            <canvas id="preview" width="500" height="500"></canvas>
+        </div>
+        <div id="progress">Прогресс: <span id="prog-val">0.0</span>%</div>
+        <div id="traj-plot" style="width:800px;height:600px;"></div>
+        <div id="torque-plot" style="width:800px;height:600px;"></div>
     </div>
-    <div id="progress">Прогресс: <span id="prog-val">0.0</span>%</div>
-    <div id="traj-plot" style="width:800px;height:600px;"></div>
-    <div id="torque-plot" style="width:800px;height:600px;"></div>
+
+    <!-- ========== Analytical tab ========== -->
+    <div id="tab-analytical" class="tabcontent hidden">
+        <h2>Аналитический расчёт траекторий (Moly-Cop)</h2>
+        <p>
+            Параметры мельницы — в тех же единицах, что и таблица
+            <code>instruct/Media Charge_Trajectories.xls</code> (футы, дюймы, градусы).
+            Результаты сравниваются с эталонными значениями из таблицы.
+        </p>
+        <div id="an-input-form">
+            <div class="form-group"><label>Эффективный диаметр мельницы (ft):</label><input type="number" step="0.1" id="a_d_eff" value="36"></div>
+            <div class="form-group"><label>Диаметр шара (in):</label><input type="number" step="0.1" id="a_d_ball" value="5"></div>
+            <div class="form-group"><label>Статическое трение μs:</label><input type="number" step="0.01" id="a_mu_s" value="0.05"></div>
+            <div class="form-group"><label>Динамическое трение μd:</label><input type="number" step="0.01" id="a_mu_d" value="0.20"></div>
+            <div class="form-group"><label>Угол лифтера (°):</label><input type="number" step="1" id="a_lifter_angle" value="15"></div>
+            <div class="form-group"><label>Высота лифтера (in):</label><input type="number" step="0.5" id="a_lifter_height" value="8"></div>
+            <div class="form-group"><label>% критической скорости:</label><input type="number" step="1" id="a_pct_cs" value="76"></div>
+            <div class="form-group"><label>Заполнение мельницы (%):</label><input type="number" step="1" id="a_filling" value="28"></div>
+            <div class="form-group"><label>Угол естественного откоса (°):</label><input type="number" step="1" id="a_repose" value="35"></div>
+            <div class="form-group"><label>Плотность шара (lb/in³, сталь≈0.284):</label><input type="number" step="0.001" id="a_ball_density" value="0.284"></div>
+            <button onclick="runAnalytical()">Рассчитать</button>
+        </div>
+
+        <div class="an-grid" style="margin-top:18px;">
+            <div>
+                <h3>Результаты расчёта</h3>
+                <table id="analytical-table"></table>
+                <h4>Сравнение с эталоном (Moly-Cop)</h4>
+                <table id="diff-table"></table>
+            </div>
+            <div>
+                <h3>Траектория полёта шара</h3>
+                <div id="analytical-plot"></div>
+                <p style="font-size: 0.85em; color: #555;">
+                    Красная окружность — барабан; синяя траектория — свободный полёт
+                    от точки отрыва до удара; зелёная точка — место удара.
+                </p>
+            </div>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

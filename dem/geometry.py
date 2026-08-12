@@ -20,7 +20,7 @@ class WallLine(Boundary):
             return None  # нет контакта
 
         overlap = particle.radius - dist
-        contact_point = particle.pos - overlap * self.normal
+        contact_point = particle.pos - dist * self.normal
         normal_unit_vector = -self.normal
         overlap_rate = np.dot(particle.vel, self.normal)
         tangential_velocity = particle.vel - overlap_rate * self.normal

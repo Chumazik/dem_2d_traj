@@ -5,9 +5,6 @@
     * :mod:`dem.jit_kernels.wall`     – заготовка для батчевого расчёта
       сил частица‑стенка;
     * :mod:`dem.jit_kernels.integrator` – один шаг Velocity Verlet.
-
-GPU-аналог ядра ``pairwise_particle_forces`` (на CuPy RawKernel)
-находится в :mod:`dem.gpu_backend`.
 """
 
 from .pairwise import _pairwise_particle_forces

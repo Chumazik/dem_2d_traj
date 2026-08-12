@@ -1,3 +1,8 @@
 numpy>=1.21.0
 matplotlib>=3.3.0
 PyQt5>=5.15.0
+Flask>=3.0
+numba>=0.58
+# Опционально для GPU-бэкенда (для парных контактов и Verlet):
+# pip install cupy-cuda12x
+# Без cupy режим «GPU» в UI прозрачно фолбэчится на Numba (см. AGENTS.md).

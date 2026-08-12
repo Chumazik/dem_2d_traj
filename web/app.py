@@ -5,6 +5,7 @@ from typing import Optional
 from dem.simulation import Simulation
 from utils.config import SimulationConfig
 from web.live_buffer import LiveBuffer
+from dem.analytical import AnalyticalParams, compute_analytical, to_jsonable
 
 app = Flask(__name__)
 
@@ -100,11 +101,11 @@ class SimState:
                 "config": self._config.__dict__ if self._config else {},
             }
 
-    def partial_snapshot(self, sim_id: int) -> dict:
+    def partial_snapshot(self, sim_id: int, tail: int = 0) -> dict:
         with self._lock:
             if self._sim_id == 0 or sim_id != self._sim_id:
                 return {"error": "no active simulation for this sim_id"}
-        snap = self._buffer.snapshot()
+        snap = self._buffer.snapshot(tail=tail)
         if not snap["trajectories"] and not snap["time"]:
             return {"error": "no partial data yet"}
         return snap
@@ -214,11 +215,37 @@ def start():
         lifter_width=float(data.get("lifter_width", 0.02)),
         num_lifters=int(data.get("num_lifters", 0)),
         dt=float(data.get("dt", 1e-5)),
-        total_time=float(data.get("total_time", 5.0))
+        total_time=float(data.get("total_time", 5.0)),
+        use_jit=_as_bool(data.get("use_jit", True)),
+        use_gpu=_as_bool(data.get("use_gpu", False)),
     )
     thread = threading.Thread(target=run_simulation, args=(config, sim_id))
     thread.start()
-    return jsonify({"status": "started", "sim_id": sim_id})
+    return jsonify({
+        "status": "started",
+        "sim_id": sim_id,
+        "use_jit": config.use_jit,
+        "use_gpu": config.use_gpu,
+        "gpu_available": _gpu_available(),
+    })
+
+
+def _as_bool(v) -> bool:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    if isinstance(v, (int, float)):
+        return bool(v)
+    return False
+
+
+def _gpu_available() -> bool:
+    try:
+        from dem import gpu_backend
+        return gpu_backend.is_available()
+    except Exception:
+        return False
 
 
 @app.route("/stop", methods=["POST"])
@@ -235,9 +262,48 @@ def status():
 @app.route("/partial_results")
 def partial_results():
     sim_id = request.args.get("sim_id", type=int)
-    return jsonify(state.partial_snapshot(sim_id or 0))
+    tail = request.args.get("tail", default=0, type=int)
+    return jsonify(state.partial_snapshot(sim_id or 0, tail=max(0, tail)))
 
 
 @app.route("/results")
 def results():
     return jsonify(state.results_snapshot())
+
+
+@app.route("/analytical", methods=["POST"])
+def analytical():
+    """Аналитический расчёт траекторий мелющих тел (Moly-Cop-совместимая модель).
+
+    Принимает JSON-тело с теми же параметрами, что и таблица
+    ``Media Charge_Trajectories.xls``: эффективный диаметр мельницы,
+    диаметр шара, коэффициенты трения, угол и высоту лифтера, % критической
+    скорости, заполнение и угол естественного откоса. Возвращает максимум
+    производных показателей + координаты траектории для построения графика.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        params = AnalyticalParams(
+            effective_mill_diameter_ft=float(
+                data.get("effective_mill_diameter_ft", 36.0)
+            ),
+            ball_diameter_in=float(data.get("ball_diameter_in", 5.0)),
+            static_friction=float(data.get("static_friction", 0.05)),
+            dynamic_friction=float(data.get("dynamic_friction", 0.20)),
+            lifter_face_angle_deg=float(data.get("lifter_face_angle_deg", 15.0)),
+            lifter_height_in=float(data.get("lifter_height_in", 8.0)),
+            pct_critical_speed=float(data.get("pct_critical_speed", 76.0)),
+            apparent_mill_filling=float(data.get("apparent_mill_filling", 28.0)),
+            angle_of_repose_deg=float(data.get("angle_of_repose_deg", 35.0)),
+            ball_density_lb_in3=float(data.get("ball_density_lb_in3", 0.284)),
+        )
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": f"invalid input: {exc}"}), 400
+
+    try:
+        n_points = max(2, min(401, int(data.get("n_traj_points", 41))))
+        out = compute_analytical(params, n_traj_points=n_points)
+    except Exception as exc:
+        return jsonify({"error": f"calculation failed: {exc}"}), 500
+
+    return jsonify(to_jsonable(out))

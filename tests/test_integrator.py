@@ -22,9 +22,9 @@ class TestIntegrator(unittest.TestCase):
 
             id=0, radius=0.02, density=2500, mass=0.01, inertia=0.0001,
 
-            pos=np.array([0, 0]), vel=np.array([1, 0]), ang_vel=0.0,
+            pos=np.array([0.0, 0.0]), vel=np.array([1.0, 0.0]), ang_vel=0.0,
 
-            force=np.array([0, 0]), torque=0.0, history=[np.array([0, 0])]
+            force=np.array([0.0, 0.0]), torque=0.0, history=[np.array([0.0, 0.0])]
 
         )
 
@@ -34,9 +34,9 @@ class TestIntegrator(unittest.TestCase):
 
             id=1, radius=0.02, density=2500, mass=0.01, inertia=0.0001,
 
-            pos=np.array([0.04, 0]), vel=np.array([0, 0]), ang_vel=0.0,
+            pos=np.array([0.04, 0.0]), vel=np.array([0.0, 0.0]), ang_vel=0.0,
 
-            force=np.array([0, 0]), torque=0.0, history=[np.array([0, 0])]
+            force=np.array([0.0, 0.0]), torque=0.0, history=[np.array([0.0, 0.0])]
 
         )
 
@@ -66,11 +66,13 @@ class TestIntegrator(unittest.TestCase):
 
 
 
-        # Check that particles have moved
+        # Check that the moving particle has moved
 
-        self.assertNotEqual(particle1.pos[0], 0)
+        self.assertNotEqual(particle1.pos[0], 0.0)
 
-        self.assertNotEqual(particle2.pos[0], 0.04)
+        # The stationary particle (no forces, no velocity) stays put
+
+        self.assertAlmostEqual(particle2.pos[0], 0.04)
 
 
 

@@ -1,20 +1,19 @@
-"""Расчёт сил DEM с поддержкой нескольких бэкендов.
+"""Расчёт сил DEM и шаг интегратора.
 
 В модуле три публичных пути:
 
-* :func:`compute_all_forces` – основной CPU-путь (чистый Python, без
-  Numba). Сохраняет полную совместимость с предыдущими версиями;
-* :func:`compute_pairwise_forces` – высокопроизводительный путь для
-  парных контактов частица‑частица, который автоматически выбирает
-  бэкенд:
-  - если в конфигурации ``contact_model.config.use_gpu`` истинно и
-    :mod:`dem.gpu_backend` доступен → CuPy-реализация;
-  - иначе → батчевая Numba-версия из :mod:`dem.jit_kernels.pairwise`;
-* :func:`velocity_verlet_step` – шаг интегратора с тем же выбором
-  бэкенда, что и в :func:`compute_pairwise_forces` (CuPy или Numba).
-
-Контакты частица‑граница всегда считаются на CPU из-за разнородной
-геометрии (``WallLine`` / ``WallCircle`` / ``Lifter``).
+* :func:`compute_all_forces` – основной путь, делегирующий парные контакты
+  батчевому :func:`compute_pairwise_forces` (Numba или CuPy) и оставляющий
+  контакты частица‑граница на CPU из‑за разнородной геометрии
+  (``WallLine`` / ``WallCircle`` / ``Lifter``);
+* :func:`compute_pairwise_forces` – высокопроизводительный батчевый путь
+  для парных контактов частица‑частица. Автовыбор бэкенда:
+    1. ``config.use_gpu=True`` и доступный CuPy → :func:`dem.gpu_backend.compute_pairwise_forces_cupy`;
+    2. иначе → Numba-версия из :mod:`dem.jit_kernels.pairwise`;
+    3. иначе → чистый Python (вызывающая сторона может перейти на
+       :func:`_pairwise_python_loop`);
+* :func:`velocity_verlet_step` – шаг интегратора. Автовыбор бэкенда:
+  CuPy → Numba → чистый Python (аналогично).
 """
 
 from __future__ import annotations
@@ -29,66 +28,136 @@ from .jit_kernels.integrator import _velocity_verlet_step as _nb_verlet
 
 
 # ---------------------------------------------------------------------------
+# Хелперы для выбора бэкенда
+# ---------------------------------------------------------------------------
+def _want_gpu(contact_model: ContactModel) -> bool:
+    """``True``, если в конфигурации запрошен GPU-бэкенд."""
+    cfg = getattr(contact_model, "config", None)
+    if cfg is None:
+        return False
+    return bool(getattr(cfg, "use_gpu", False))
+
+
+def _want_jit(contact_model: ContactModel) -> bool:
+    cfg = getattr(contact_model, "config", None)
+    if cfg is None:
+        return True
+    return bool(getattr(cfg, "use_jit", True))
+
+
+# ---------------------------------------------------------------------------
 # CPU / чистый Python (обратная совместимость)
 # ---------------------------------------------------------------------------
-
-def compute_all_forces(particles, boundaries, contact_model: ContactModel, contacts=None):
-    """
-    Вычисляет все взаимодействия частиц‑частиц и частица‑граница.
-    Сохраняет реактивный момент в объекте WallCircle.
-    """
+def _pairwise_python_loop(particles, contact_model: ContactModel,
+                          contacts=None) -> None:
+    """O(N²) чистый Python — для пар без GPU/Numba."""
     n = len(particles)
-
     if contacts is None:
         contacts = {}
 
-    # ---- Частица-частица ----
     for i in range(n):
+        pi = particles[i]
         for j in range(i + 1, n):
-            pi, pj = particles[i], particles[j]
+            pj = particles[j]
             delta = pj.pos - pi.pos
             dist = np.linalg.norm(delta)
 
-            if dist < pi.radius + pj.radius:
-                overlap = pi.radius + pj.radius - dist
-                normal = delta / dist if dist != 0 else np.array([1.0, 0.0])
+            if dist >= pi.radius + pj.radius:
+                continue
 
-                # относительная скорость в нормальном и касательном направлениях
-                rel_vel = pj.vel - pi.vel
-                overlap_rate = np.dot(rel_vel, normal)
-                tangential_velocity = rel_vel - overlap_rate * normal
+            overlap = pi.radius + pj.radius - dist
+            normal = delta / dist if dist != 0 else np.array([1.0, 0.0])
 
-                # Создаем или обновляем контакт
-                contact_key = (pi.id, pj.id)
-                if contact_key not in contacts:
-                    contacts[contact_key] = Contact(pi.id, pj.id)
+            rel_vel = pj.vel - pi.vel
+            overlap_rate = float(np.dot(rel_vel, normal))
+            tangential_velocity = rel_vel - overlap_rate * normal
 
-                contact = contacts[contact_key]
-                # Используем dt, хранящийся в модели контакта
-                tangential_displacement = (
-                    contact.tangential_displacement
-                    + np.dot(tangential_velocity, normal) * contact_model.dt
-                )
-                effective_radius = (pi.radius * pj.radius) / (pi.radius + pj.radius)
+            contact_key = (pi.id, pj.id)
+            if contact_key not in contacts:
+                contacts[contact_key] = Contact(pi.id, pj.id)
+            contact = contacts[contact_key]
+            tangential_displacement = (
+                contact.tangential_displacement
+                + float(np.dot(tangential_velocity, normal)) * contact_model.dt
+            )
+            effective_radius = (pi.radius * pj.radius) / (pi.radius + pj.radius)
 
-                fn_vec, ft_vec, torque_i, torque_j = contact_model.compute_forces(
-                    overlap,
-                    overlap_rate,
-                    tangential_displacement,
-                    np.dot(tangential_velocity, normal),
-                    effective_radius,
-                    normal,
-                    pi,
-                    pj
-                )
+            fn_vec, ft_vec, torque_i, torque_j = contact_model.compute_forces(
+                overlap, overlap_rate,
+                tangential_displacement,
+                float(np.dot(tangential_velocity, normal)),
+                effective_radius, normal, pi, pj,
+            )
 
-                pi.apply_force(-fn_vec - ft_vec, torque_i)
-                pj.apply_force(fn_vec + ft_vec, torque_j)
+            pi.apply_force(-fn_vec - ft_vec, torque_i)
+            pj.apply_force(fn_vec + ft_vec, torque_j)
+            contact.tangential_displacement = tangential_displacement
 
-                # Обновляем касательное смещение
-                contact.tangential_displacement = tangential_displacement
+    return contacts
 
-    # ---- Частица-граница ----
+
+# ---------------------------------------------------------------------------
+# Главная точка входа: CPU/Numba/GPU авто-выбор для пар, CPU для границ
+# ---------------------------------------------------------------------------
+def compute_all_forces(particles, boundaries, contact_model: ContactModel,
+                       contacts=None):
+    """Полный расчёт сил: парные → автовыбор бэкенда; частица‑граница → CPU.
+
+    Контакты частица‑граница остаются на CPU из‑за разнородной геометрии.
+    Возвращает словарь контактов (пополняется :class:`dem.contact_model.Contact`
+    только для граничных пар).
+    """
+    if contacts is None:
+        contacts = {}
+
+    # --- Парные контакты: автовыбор GPU → Numba → Python ---
+    if len(particles) >= 2:
+        if _want_gpu(contact_model):
+            try:
+                from . import gpu_backend
+                if gpu_backend.is_available():
+                    # Сбросить старые накопления сил перед GPU-проходом
+                    for p in particles:
+                        p.reset_force()
+                    gpu_backend.compute_pairwise_forces_cupy(particles, contact_model)
+                    # Обновить contacts пустыми записями для последующей итерации
+                    for i in range(len(particles)):
+                        for j in range(i + 1, len(particles)):
+                            key = (particles[i].id, particles[j].id)
+                            if key not in contacts:
+                                contacts[key] = Contact(particles[i].id, particles[j].id)
+            except Exception:
+                # мягкий фолбэк при любой ошибке GPU-пути
+                if _want_jit(contact_model):
+                    try:
+                        for p in particles:
+                            p.reset_force()
+                        compute_pairwise_forces(particles, contact_model)
+                        for i in range(len(particles)):
+                            for j in range(i + 1, len(particles)):
+                                key = (particles[i].id, particles[j].id)
+                                if key not in contacts:
+                                    contacts[key] = Contact(particles[i].id, particles[j].id)
+                    except Exception:
+                        _pairwise_python_loop(particles, contact_model, contacts)
+                else:
+                    _pairwise_python_loop(particles, contact_model, contacts)
+        elif _want_jit(contact_model):
+            try:
+                for p in particles:
+                    p.reset_force()
+                compute_pairwise_forces(particles, contact_model)
+                for i in range(len(particles)):
+                    for j in range(i + 1, len(particles)):
+                        key = (particles[i].id, particles[j].id)
+                        if key not in contacts:
+                            contacts[key] = Contact(particles[i].id, particles[j].id)
+            except Exception:
+                _pairwise_python_loop(particles, contact_model, contacts)
+        else:
+            _pairwise_python_loop(particles, contact_model, contacts)
+
+    # --- Контакты частица-граница (всегда CPU) ---
     for boundary in boundaries:
         for p in particles:
             coll = boundary.detect_collision(p)
@@ -96,15 +165,11 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel, conta
                 continue
 
             overlap, contact_point, normal, overlap_rate, tangential_velocity = coll
+            rel_vel_tang = float(np.dot(tangential_velocity, normal))
 
-            # относительная касательная скорость (модуль)
-            rel_vel_tang = np.dot(tangential_velocity, normal)
-
-            # Создаем или обновляем контакт
             contact_key = (p.id, boundary)
             if contact_key not in contacts:
                 contacts[contact_key] = Contact(p.id, None)
-
             contact = contacts[contact_key]
             tangential_displacement = (
                 contact.tangential_displacement
@@ -112,68 +177,70 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel, conta
             )
 
             fn_vec, ft_vec, torque_p, _ = contact_model.compute_forces(
-                overlap,
-                overlap_rate,
+                overlap, overlap_rate,
                 tangential_displacement,
-                rel_vel_tang,
-                p.radius,
-                normal,
-                p,
-                None
+                rel_vel_tang, p.radius, normal, p, None,
             )
 
             p.apply_force(-fn_vec - ft_vec, torque_p)
-
             if isinstance(boundary, WallCircle):
-                # реактивный момент, который частицы передали барабану
                 boundary.apply_driving_torque(torque_p)
 
     return contacts
 
 
 # ---------------------------------------------------------------------------
-# Высокопроизводительный бэкенд part-part контактов
+# Высокопроизводительный путь: только парные контакты (Numba/CuPy)
 # ---------------------------------------------------------------------------
-
-def _want_gpu(contact_model: ContactModel) -> bool:
-    """Возвращает ``True``, если в конфигурации запрошен GPU-бэкенд."""
-    cfg = getattr(contact_model, "config", None)
-    if cfg is None:
-        return False
-    return bool(getattr(cfg, "use_gpu", False))
-
-
 def compute_pairwise_forces(
     particles,
     contact_model: ContactModel,
     tangential_disp: Optional[np.ndarray] = None,
 ) -> Optional[np.ndarray]:
-    """Считает силы/моменты парных контактов.
+    """Считает силы/моменты парных контактов батчево.
 
-    Автоматически выбирает бэкенд:
+    Поведение зависит от ``contact_model.config``:
 
-    * ``contact_model.config.use_gpu`` и доступный CuPy → :mod:`dem.gpu_backend`;
-    * иначе → батчевая Numba-версия из :mod:`dem.jit_kernels.pairwise`.
+    * ``use_gpu=True`` + доступный CuPy → :func:`dem.gpu_backend.compute_pairwise_forces_cupy`;
+    * иначе + ``use_jit=True`` (по умолчанию) → Numba-ядро
+      :func:`dem.jit_kernels.pairwise._pairwise_particle_forces`;
+    * иначе → чистый Python O(N²).
 
-    Перед вызовом поля ``force``/``torque`` частиц должны быть обнулены.
-    Возвращает обновлённый массив ``tangential_disp`` (Numba-путь)
-    или ``None`` (GPU-путь).
+    Поля ``force``/``torque`` частиц должны быть обнулены до вызова.
+    Возвращает обновлённый массив ``tangential_disp``.
     """
     if not particles:
         return tangential_disp
 
-    use_gpu = _want_gpu(contact_model)
-    if use_gpu:
+    n = len(particles)
+
+    # ---- GPU (CuPy) ----
+    if _want_gpu(contact_model):
         try:
             from . import gpu_backend
             if gpu_backend.is_available():
                 gpu_backend.compute_pairwise_forces_cupy(particles, contact_model)
                 return tangential_disp
         except Exception:
-            # мягкий фолбэк на Numba при любой ошибке GPU-пути
+            # мягкий фолбэк
             pass
 
     # ---- Numba / batch ----
+    if _want_jit(contact_model):
+        try:
+            return _compute_pairwise_forces_numba(particles, contact_model, tangential_disp)
+        except Exception:
+            # мягкий фолбэк
+            pass
+
+    # ---- Чистый Python ----
+    return _compute_pairwise_forces_python(particles, contact_model, tangential_disp)
+
+
+def _compute_pairwise_forces_numba(
+    particles, contact_model: ContactModel,
+    tangential_disp: Optional[np.ndarray],
+) -> np.ndarray:
     n = len(particles)
     pos = np.empty((n, 2), dtype=np.float64)
     vel = np.empty((n, 2), dtype=np.float64)
@@ -215,28 +282,80 @@ def compute_pairwise_forces(
     return tangential_disp
 
 
-# ---------------------------------------------------------------------------
-# Шаг интегратора с автовыбором бэкенда
-# ---------------------------------------------------------------------------
+def _compute_pairwise_forces_python(
+    particles, contact_model: ContactModel,
+    tangential_disp: Optional[np.ndarray],
+) -> Optional[np.ndarray]:
+    """Чистый Python O(N²) — для пар без GPU/Numba; понимает tangential_disp
+    как вход/выход Numba-стиля (накапливает в квадратной матрице)."""
+    n = len(particles)
+    if tangential_disp is None or tangential_disp.shape != (n, n):
+        tangential_disp = np.zeros((n, n), dtype=np.float64)
 
-def velocity_verlet_step(particles, contact_model: ContactModel, dt: float) -> None:
+    dt = float(getattr(contact_model, "dt", 0.0) or 0.0)
+    for i in range(n):
+        pi = particles[i]
+        for j in range(i + 1, n):
+            pj = particles[j]
+            delta = pj.pos - pi.pos
+            dist = float(np.linalg.norm(delta))
+            radius_sum = float(pi.radius + pj.radius)
+            if dist >= radius_sum:
+                continue
+            overlap = radius_sum - dist
+            if dist == 0.0:
+                normal = np.array([1.0, 0.0])
+                inv_dist = 0.0
+            else:
+                normal = delta / dist
+                inv_dist = 1.0 / dist
+            rel = pj.vel - pi.vel
+            overlap_rate = float(np.dot(rel, normal))
+            tangential_velocity = rel - overlap_rate * normal
+
+            # не наращиваем tangential_disp последовательно (Numba-ядро этого не делает),
+            # но поддерживаем симметричную матрицу для совместимости.
+            xi = float(np.dot(tangential_velocity, normal)) * dt
+            tangential_disp[i, j] += xi
+            tangential_disp[j, i] = -tangential_disp[i, j]
+
+            r_eff = (float(pi.radius) * float(pj.radius)) / radius_sum
+
+            fn_vec, ft_vec, torque_i, torque_j = contact_model.compute_forces(
+                overlap, overlap_rate,
+                tangential_disp[i, j],
+                float(np.dot(tangential_velocity, normal)),
+                r_eff, normal, pi, pj,
+            )
+
+            pi.apply_force(-fn_vec - ft_vec, torque_i)
+            pj.apply_force(fn_vec + ft_vec, torque_j)
+
+    return tangential_disp
+
+
+# ---------------------------------------------------------------------------
+# Шаг интегратора: автовыбор GPU/Numba/Python
+# ---------------------------------------------------------------------------
+def velocity_verlet_step(
+    particles, contact_model: ContactModel, dt: float
+) -> None:
     """Один шаг Velocity Verlet (полушаг скоростей + шаг позиций).
 
-    Бэкенд выбирается так же, как и в :func:`compute_pairwise_forces`:
-    если ``contact_model.config.use_gpu`` истинно и CuPy доступен →
-    считаем на GPU, иначе → батчевая Numba-версия из
-    :mod:`dem.jit_kernels.integrator`.
+    Автовыбор бэкенда:
+    1. ``use_gpu=True`` + CuPy → :func:`dem.gpu_backend.velocity_verlet_step_cupy`;
+    2. ``use_jit=True`` (по умолчанию) → Numba-ядро
+       :func:`dem.jit_kernels.integrator._velocity_verlet_step`;
+    3. иначе → чистый Python.
 
-    Перед вызовом поля ``force``/``torque`` частиц уже должны быть
-    посчитаны текущим шагом. После шага ``force``/``torque`` НЕ
-    обнуляются – это делает вызывающая сторона перед следующим
-    пересчётом сил.
+    Поля ``force``/``torque`` уже должны быть посчитаны текущим шагом;
+    после шага они НЕ сбрасываются (делает вызывающая сторона).
     """
     if not particles:
         return
 
-    use_gpu = _want_gpu(contact_model)
-    if use_gpu:
+    # ---- GPU ----
+    if _want_gpu(contact_model):
         try:
             from . import gpu_backend
             if gpu_backend.is_available():
@@ -245,7 +364,19 @@ def velocity_verlet_step(particles, contact_model: ContactModel, dt: float) -> N
         except Exception:
             pass
 
-    # ---- Numba / batch ----
+    # ---- Numba ----
+    if _want_jit(contact_model):
+        try:
+            _velocity_verlet_step_numba(particles, dt)
+            return
+        except Exception:
+            pass
+
+    # ---- Чистый Python ----
+    _velocity_verlet_step_python(particles, dt)
+
+
+def _velocity_verlet_step_numba(particles, dt: float) -> None:
     n = len(particles)
     pos = np.empty((n, 2), dtype=np.float64)
     vel = np.empty((n, 2), dtype=np.float64)
@@ -270,3 +401,14 @@ def velocity_verlet_step(particles, contact_model: ContactModel, dt: float) -> N
         p.pos = pos[i]
         p.vel = vel[i]
         p.ang_vel = float(ang_vel[i])
+
+
+def _velocity_verlet_step_python(particles, dt: float) -> None:
+    for p in particles:
+        a = p.force / p.mass
+        alpha = p.torque / p.inertia
+        p.vel += 0.5 * a * dt
+        p.ang_vel += 0.5 * alpha * dt
+
+    for p in particles:
+        p.pos += p.vel * dt

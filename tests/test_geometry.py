@@ -12,19 +12,19 @@ class TestGeometry(unittest.TestCase):
 
     def test_wall_line_detect_collision(self):
 
-        # Create a wall line (vertical line at x=1)
+        # Create a wall line (vertical line at x=1, normal points into the region)
 
         wall = WallLine(point=[1, 0], normal=[-1, 0])
 
 
 
-        # Create a particle
+        # Create a particle whose center has crossed the wall plane
 
         particle = Particle(
 
             id=0, radius=0.02, density=2500, mass=0.01, inertia=0.0001,
 
-            pos=np.array([0.9, 0]), vel=np.array([0, 0]), ang_vel=0.0,
+            pos=np.array([1.02, 0]), vel=np.array([0, 0]), ang_vel=0.0,
 
             force=np.array([0, 0]), torque=0.0, history=[np.array([0, 0])]
 

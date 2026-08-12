@@ -86,7 +86,7 @@ class TestContactModel(unittest.TestCase):
 
         self.assertIsInstance(normal_force, np.ndarray)
 
-        self.assertIsInstance(tangential_force, (int, float))
+        self.assertIsInstance(tangential_force, np.ndarray)
 
         self.assertIsInstance(torque1, (int, float))
 
@@ -138,7 +138,7 @@ class TestContactModel(unittest.TestCase):
 
         self.assertIsInstance(normal_force, np.ndarray)
 
-        self.assertIsInstance(tangential_force, (int, float))
+        self.assertIsInstance(tangential_force, np.ndarray)
 
         self.assertIsInstance(torque1, (int, float))
 

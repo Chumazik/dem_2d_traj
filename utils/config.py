@@ -27,3 +27,5 @@ class SimulationConfig:
     num_lifters: int = 0                    # количество лифтеров
     dt: float = 1e-5                       # с
     total_time: float = 5.0                # с
+    use_jit: bool = True                   # Numba-JIT интегратор (иначе чистый Python)
+    use_gpu: bool = False                  # GPU (CuPy) для парных контактов и Verlet (фолбэк: Numba → CPU)
