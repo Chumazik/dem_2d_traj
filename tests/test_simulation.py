@@ -58,6 +58,8 @@ class TestSimulation(unittest.TestCase):
             rolling_friction=0.01,
             drum_radius=0.5,
             drum_omega=2.0,
+            num_lifters=0,
+            lifter_height=0.0,
             dt=1e-5,
             total_time=0.1
         )
@@ -67,6 +69,33 @@ class TestSimulation(unittest.TestCase):
         self.assertEqual(boundary.radius, 0.5)
         self.assertEqual(boundary.omega, 2.0)
         self.assertEqual(boundary.applied_torque, 0.0)
+
+    def test_lifters_rotate_when_step_is_called_externally(self):
+        """Лифтеры должны вращаться даже если step() вызывается напрямую,
+        а не через run(). Иначе физика статична при внешних циклах."""
+        from dem.geometry import Lifter
+        config = SimulationConfig(
+            num_particles=5,
+            num_lifters=4,
+            lifter_height=0.03,
+            lifter_width=0.02,
+            drum_radius=0.5,
+            drum_omega=2.0,
+            dt=1e-5,
+            total_time=0.1,
+        )
+        sim = Simulation(config)
+        lifters = [b for b in sim.boundaries if isinstance(b, Lifter)]
+        self.assertEqual(len(lifters), 4)
+        base0 = lifters[0].base_angle
+        # Начальные углы должны быть base_angle.
+        for lifter in lifters:
+            self.assertAlmostEqual(lifter.current_angle, lifter.base_angle, places=8)
+        for _ in range(50):
+            sim.step()
+        # Угол должен продвинуться вперёд (omega*dt*N).
+        expected = base0 + 2.0 * 1e-5 * 50
+        self.assertAlmostEqual(lifters[0].current_angle, expected, places=7)
 
 if __name__ == '__main__':
     unittest.main()

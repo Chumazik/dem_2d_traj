@@ -21,6 +21,9 @@ function startSim() {
         drum_radius:      document.getElementById('drum_radius').value,
         drum_omega:       document.getElementById('drum_omega').value,
         gravity:          document.getElementById('gravity').value,
+        apparent_mill_filling: document.getElementById('apparent_mill_filling').value,
+        angle_of_repose_deg:   document.getElementById('angle_of_repose_deg').value,
+        gap_fraction:          document.getElementById('gap_fraction').value,
         lifter_height:    document.getElementById('lifter_height').value,
         lifter_width:     document.getElementById('lifter_width').value,
         num_lifters:      document.getElementById('num_lifters').value,
@@ -179,20 +182,23 @@ function drawLiveSnapshot(body) {
             const ang = baseAngle + p.drum_omega * timeNow;
             const nx = Math.cos(ang);
             const ny = Math.sin(ang);
-            // нижняя средняя точка лифтера — на окружности барабана
+            // Внешняя нижняя середина лифтера лежит ровно на окружности
+            // барабана (drum_radius не меняется от параметров лифтера).
             const ax = toPx(p.drum_radius * nx);
             const ay = toPx_y(p.drum_radius * ny);
             const halfW = p.lifter_width / 2;
-            // Тангенциальное направление: перпендикулярно нормали
+            // Тангенциальное направление: перпендикулярно нормали.
             const tx = -ny, ty = nx;
             const x1 = ax + (-halfW) * tx * scale;
             const y1 = ay + (-halfW) * ty * scale;
             const x2 = ax + ( halfW) * tx * scale;
             const y2 = ay + ( halfW) * ty * scale;
-            const x3 = x2 + p.lifter_height * nx * scale;
-            const y3 = y2 + p.lifter_height * ny * scale;
-            const x4 = x1 + p.lifter_height * nx * scale;
-            const y4 = y1 + p.lifter_height * ny * scale;
+            // Внутренние углы — на расстоянии lifter_height ВНУТРЬ барабана
+            // (минус по нормали, т.к. (nx,ny) направлен наружу).
+            const x3 = x2 - p.lifter_height * nx * scale;
+            const y3 = y2 - p.lifter_height * ny * scale;
+            const x4 = x1 - p.lifter_height * nx * scale;
+            const y4 = y1 - p.lifter_height * ny * scale;
             ctx.beginPath();
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
@@ -311,7 +317,8 @@ function loadResults() {
 // ===== Статичный предпросмотр (до старта симуляции) =====
 const PREVIEW_IDS = [
     'num_particles', 'particle_radius',
-    'drum_radius', 'lifter_height', 'lifter_width', 'num_lifters'
+    'drum_radius', 'lifter_height', 'lifter_width', 'num_lifters',
+    'apparent_mill_filling', 'angle_of_repose_deg', 'gap_fraction'
 ];
 
 function readPreviewParams() {
@@ -322,6 +329,9 @@ function readPreviewParams() {
         lifter_height:  document.getElementById('lifter_height').value,
         lifter_width:   document.getElementById('lifter_width').value,
         num_lifters:    document.getElementById('num_lifters').value,
+        apparent_mill_filling: document.getElementById('apparent_mill_filling').value,
+        angle_of_repose_deg:   document.getElementById('angle_of_repose_deg').value,
+        gap_fraction:          document.getElementById('gap_fraction').value,
     });
 }
 
@@ -353,26 +363,28 @@ function updatePreview() {
     ctx.arc(cx, cy, toPx(p.drum_radius), 0, Math.PI * 2);
     ctx.stroke();
 
-    // Лифтеры (статичные — без учёта вращения)
+    // Лифтеры (статичные — предпросмотр; без вращения).
+    // Рисуются ВНУТРЬ барабана (минус по нормали), чтобы визуально
+    // занимать часть рабочей зоны, не увеличивая размер барабана.
     if (p.num_lifters > 0 && p.lifter_height > 0 && p.lifter_width > 0) {
         ctx.fillStyle = '#a0522d';
         ctx.strokeStyle = '#5a2d0c';
-        const baseRadius = p.drum_radius;
         for (let i = 0; i < p.num_lifters; i++) {
             const baseAngle = (2 * Math.PI * i) / p.num_lifters - Math.PI / 2;
             const nx = Math.cos(baseAngle);
             const ny = Math.sin(baseAngle);
-            const ax = cx + toPx(baseRadius * nx);
-            const ay = cy + toPx(baseRadius * ny);
+            const ax = cx + toPx(p.drum_radius * nx);
+            const ay = cy + toPx(p.drum_radius * ny);
             const halfW = p.lifter_width / 2;
             const x1 = ax + toPx(-halfW * (-ny));
             const y1 = ay + toPx(-halfW * (nx));
             const x2 = ax + toPx( halfW * (-ny));
             const y2 = ay + toPx( halfW * (nx));
-            const x3 = x2 + toPx(p.lifter_height * nx);
-            const y3 = y2 + toPx(p.lifter_height * ny);
-            const x4 = x1 + toPx(p.lifter_height * nx);
-            const y4 = y1 + toPx(p.lifter_height * ny);
+            // Внутренние углы — ближе к центру барабана.
+            const x3 = x2 - toPx(p.lifter_height * nx);
+            const y3 = y2 - toPx(p.lifter_height * ny);
+            const x4 = x1 - toPx(p.lifter_height * nx);
+            const y4 = y1 - toPx(p.lifter_height * ny);
             ctx.beginPath();
             ctx.moveTo(x1, y1);
             ctx.lineTo(x2, y2);
@@ -384,22 +396,49 @@ function updatePreview() {
         }
     }
 
-    // Частицы — простая гексагональная упаковка внутри эффективной области
+    // Частицы — показываем осевшее (settled) состояние у дна барабана.
     if (p.num_particles > 0 && p.particle_radius > 0) {
-        const effectiveR = Math.max(0, p.drum_radius - 2 * p.particle_radius);
+        const effectiveR = Math.max(0, p.drum_radius - p.particle_radius);
         if (effectiveR > 0) {
             const r = p.particle_radius;
-            const spacing = 2 * r;
+            const gapFrac = Math.max(
+                0, Math.min(0.3,
+                    (parseFloat(p.gap_fraction) || 0.05)
+                )
+            );
+            const spacing = 2 * r * (1 + gapFrac);
             const rowH = spacing * Math.sqrt(3) / 2;
+            const repose = Math.max(
+                5, Math.min(80,
+                    parseFloat(p.angle_of_repose_deg) || 35
+                )
+            ) * Math.PI / 180;
+            const safeRatio = Math.sin(repose) / Math.max(Math.cos(repose), 1e-6);
+            const fillFrac = Math.max(
+                0.05, Math.min(0.6,
+                    (parseFloat(p.apparent_mill_filling) || 28) / 100
+                )
+            );
+            const bedRadius = effectiveR * (0.4 + 0.5 * Math.sqrt(fillFrac / 0.5));
             ctx.fillStyle = 'rgba(70, 130, 180, 0.85)';
             ctx.strokeStyle = '#1c3f5a';
             let placed = 0;
-            for (let y = -effectiveR; y <= effectiveR && placed < p.num_particles; y += rowH) {
-                const rowOffset = (Math.round(y / rowH) % 2 === 0) ? 0 : r;
-                for (let x = -effectiveR - rowOffset; x <= effectiveR && placed < p.num_particles; x += spacing) {
-                    if (x * x + y * y > effectiveR * effectiveR) continue;
+            for (let row = 0; placed < p.num_particles; row++) {
+                const yBase = effectiveR - rowH * row - r;
+                if (yBase < -effectiveR + r) break;
+                const yAboveBottom = (effectiveR - yBase) / Math.max(1e-6, effectiveR);
+                const halfWidth = bedRadius * Math.max(0, 1 - yAboveBottom * safeRatio);
+                const rowOffset = (row % 2 === 0) ? 0 : r;
+                for (let x = -halfWidth - rowOffset; x <= halfWidth + 1e-9; x += spacing) {
+                    if (placed >= p.num_particles) break;
+                    if (x * x + yBase * yBase > effectiveR * effectiveR) continue;
                     ctx.beginPath();
-                    ctx.arc(cx + toPx(x + rowOffset), cy + toPx(y), Math.max(1, toPx(r)), 0, Math.PI * 2);
+                    ctx.arc(
+                        cx + toPx(x + rowOffset),
+                        cy + toPx(yBase),
+                        Math.max(1, toPx(r)),
+                        0, Math.PI * 2
+                    );
                     ctx.fill();
                     ctx.stroke();
                     placed++;

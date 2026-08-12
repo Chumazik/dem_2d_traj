@@ -211,6 +211,10 @@ def start():
         rolling_friction=float(data.get("rolling_friction", 0.01)),
         drum_radius=float(data.get("drum_radius", 0.5)),
         drum_omega=float(data.get("drum_omega", 2.0)),
+        gravity=float(data.get("gravity", 9.81)),
+        apparent_mill_filling=float(data.get("apparent_mill_filling", 28.0)),
+        angle_of_repose_deg=float(data.get("angle_of_repose_deg", 35.0)),
+        gap_fraction=float(data.get("gap_fraction", 0.05)),
         lifter_height=float(data.get("lifter_height", 0.03)),
         lifter_width=float(data.get("lifter_width", 0.02)),
         num_lifters=int(data.get("num_lifters", 4)),
@@ -218,7 +222,6 @@ def start():
         total_time=float(data.get("total_time", 5.0)),
         use_jit=_as_bool(data.get("use_jit", True)),
         use_gpu=_as_bool(data.get("use_gpu", False)),
-        gravity=float(data.get("gravity", 9.81)),
     )
     thread = threading.Thread(target=run_simulation, args=(config, sim_id))
     thread.start()
@@ -229,6 +232,9 @@ def start():
         "use_gpu": config.use_gpu,
         "gpu_available": _gpu_available(),
         "gravity": config.gravity,
+        "apparent_mill_filling": config.apparent_mill_filling,
+        "angle_of_repose_deg": config.angle_of_repose_deg,
+        "gap_fraction": config.gap_fraction,
     })
 
 

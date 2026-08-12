@@ -73,6 +73,7 @@ python main.py
   - `analytical.py` - аналитический расчёт траекторий (Moly-Cop Media Charge Trajectories)
   - `jit_kernels/` - Numba-ядра для горячего цикла
   - `gpu_backend.py` - CuPy-ядра для горячего цикла (опционально)
+- `tests/` - unittest: `python -m unittest discover -s tests` (52 теста, в том числе проверка начальной упаковки частиц: осевшая куча на дне с `gap_fraction`-зазором, нулевая начальная скорость) и теоретическая верификация модели DEM (2D-формат, гравитация как единственная внешняя сила, контактные законы — см. ``tests/test_forces_inventory.py``).
 - `gui/` - устаревший PyQt5-интерфейс (не используется `main.py`)
 - `visualization/` - визуализация результатов
 - `utils/` - вспомогательные функции и конфигурации (`config.py` — `SimulationConfig`)

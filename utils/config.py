@@ -30,3 +30,7 @@ class SimulationConfig:
     use_jit: bool = True                   # Numba-JIT интегратор (иначе чистый Python)
     use_gpu: bool = False                  # GPU (CuPy) для парных контактов и Verlet (фолбэк: Numba → CPU)
     gravity: float = 9.81                  # м/с², действует вдоль +Y (направление «вниз» в системе координат канваса)
+    # Параметры начальной упаковки частиц:
+    gap_fraction: float = 0.05             # доля дополнительного зазора между центрами частиц:  spacing = d·(1+gap)
+    angle_of_repose_deg: float = 35.0      # угол естественного откоса для верхней границы «кучи»
+    apparent_mill_filling: float = 28.0    # заполнение, % (определяет ширину слоя на дне)

@@ -39,59 +39,108 @@ class Simulation:
     # Инициализация
     # --------------------------------------------------------------------- #
     def initialize_particles(self):
-        """Размещает частицы внутри барабана без перекрытий (метод hexagonal packing)."""
-        R = self.config.drum_radius - self.config.particle_radius - 1e-4
-        particle_diameter = 2 * self.config.particle_radius
+        """Размещает частицы внутри барабана в виде осевшей кучи на дне.
 
-        num_rows = int(np.sqrt(R**2 / (3 * particle_diameter**2)))
-        num_cols = int(num_rows)
+        Использует тот же алгоритм, что и статический превью в web/static/script.js:
+
+        * центры частиц лежат в шахматной гексагональной упаковке по рядам;
+        * межчастичный зазор: ``spacing = d·(1+gap_fraction)`` (по умолчанию
+          +5 % к диаметру). Это даёт видимое «не приклеены друг к другу»;
+        * нижняя граница кучи: ``y = +effective_R`` (дно барабана в +Y);
+        * ширина ряда убывает линейно с высотой по углу естественного откоса
+          (``angle_of_repose_deg``);
+        * ширина основания кучи зависит от ``apparent_mill_filling``;
+        * начальная скорость: ``vel = 0``, ``ang_vel = 0`` (тяжёлая куча
+          оседает преимущественно без движения).
+
+        Если запрошено больше частиц, чем помещается в кучу, добавляем
+        их равномерно в доступных слотах, а при переполнении случайным
+        образом (с проверкой непересечения).
+        """
+        import math
+
+        R_full = self.config.drum_radius
+        r = self.config.particle_radius
+        d = 2 * r
+        spacing = d * (1.0 + self.config.gap_fraction)
+        row_h = spacing * math.sqrt(3.0) / 2.0
+
+        effective_R = R_full - r  # радиус для центров частиц
+
+        repose_rad = math.radians(self.config.angle_of_repose_deg)
+        sin_r = math.sin(repose_rad)
+        cos_r = math.cos(repose_rad)
+        safe_sin_over_cos = sin_r / max(cos_r, 1e-6)
+
+        fill_frac = max(0.05, min(0.6, self.config.apparent_mill_filling / 100.0))
+        bed_radius = effective_R * (0.4 + 0.5 * math.sqrt(fill_frac / 0.5))
 
         count = 0
-        for i in range(num_rows):
-            for j in range(num_cols):
+        row = 0
+        placed_coords: list[np.ndarray] = []
+        while count < self.config.num_particles:
+            y_base = effective_R - row_h * row - r
+            # Если верх достиг верхней кромки эффективной области — выход из
+            # основного цикла (дополнительные частицы будут размещены
+            # случайно/сверху).
+            if y_base < -effective_R + r:
+                break
+
+            y_above_bottom = (effective_R - y_base) / max(1e-6, effective_R)
+            half_width = bed_radius * max(0.0, 1.0 - y_above_bottom * safe_sin_over_cos)
+            row_offset = spacing / 2.0 if (row % 2) else 0.0
+
+            # Проходим по ряду с шагом spacing, центы выровнены в шахмат.
+            x_centers = np.arange(
+                -half_width - row_offset,
+                half_width + 1e-9,
+                spacing,
+            )
+            for x in x_centers:
                 if count >= self.config.num_particles:
                     break
-                x_offset = 0.5 * particle_diameter * (i % 2)
-                x = x_offset + j * particle_diameter
-                y = np.sqrt(3) / 2 * i * particle_diameter
-                pos = np.array([x, y])
-                mass = self.config.particle_density * np.pi * (self.config.particle_radius ** 2)
-                inertia = 0.5 * mass * (self.config.particle_radius ** 2)
-                particle = Particle(
-                    id=count,
-                    radius=self.config.particle_radius,
-                    density=self.config.particle_density,
-                    mass=mass,
-                    inertia=inertia,
-                    pos=pos,
-                    vel=np.zeros(2),
-                    ang_vel=0.0,
-                    history=[pos.copy()]
-                )
-                self.particles.append(particle)
+                if x * x + y_base * y_base > effective_R * effective_R:
+                    continue
+                pos = np.array([x, y_base], dtype=float)
+                self._add_particle_at(pos, id=count)
+                placed_coords.append(pos.copy())
                 count += 1
+            row += 1
 
-        while count < self.config.num_particles:
+        # Если в осевшей куче поместилось меньше, чем запрошено, дополняем
+        # случайной упаковкой в оставшемся пространстве барабана (для редких
+        # случаев, когда num_particles значительно больше capacity кучи).
+        attempts = 0
+        while count < self.config.num_particles and attempts < 5000:
+            attempts += 1
             angle = np.random.rand() * 2 * np.pi
-            rad = np.random.rand() * (R - self.config.particle_radius) + self.config.particle_radius
-            pos = np.array([rad * np.cos(angle), rad * np.sin(angle)])
-            if any(np.linalg.norm(pos - p.pos) < 2 * self.config.particle_radius for p in self.particles):
+            rad = np.random.rand() * (effective_R - r) + r
+            pos = np.array([rad * math.cos(angle), rad * math.sin(angle)],
+                           dtype=float)
+            if any(np.linalg.norm(pos - p) < d * (1.0 + 0.5 * self.config.gap_fraction)
+                   for p in placed_coords):
                 continue
-            mass = self.config.particle_density * np.pi * (self.config.particle_radius ** 2)
-            inertia = 0.5 * mass * (self.config.particle_radius ** 2)
-            particle = Particle(
-                id=count,
-                radius=self.config.particle_radius,
-                density=self.config.particle_density,
-                mass=mass,
-                inertia=inertia,
-                pos=pos,
-                vel=np.zeros(2),
-                ang_vel=0.0,
-                history=[pos.copy()]
-            )
-            self.particles.append(particle)
+            self._add_particle_at(pos, id=count)
+            placed_coords.append(pos.copy())
             count += 1
+
+    def _add_particle_at(self, pos: np.ndarray, id: int) -> None:
+        """Создаёт частицу в ``pos`` с нулевой скоростью/угловой скоростью и
+        стартовым history из одной точки."""
+        mass = self.config.particle_density * np.pi * (self.config.particle_radius ** 2)
+        inertia = 0.5 * mass * (self.config.particle_radius ** 2)
+        particle = Particle(
+            id=id,
+            radius=self.config.particle_radius,
+            density=self.config.particle_density,
+            mass=mass,
+            inertia=inertia,
+            pos=pos,
+            vel=np.zeros(2),
+            ang_vel=0.0,
+            history=[pos.copy()],
+        )
+        self.particles.append(particle)
 
     def initialize_boundaries(self):
         """Создаёт границу – вращающийся барабан и лифтеры."""
@@ -122,13 +171,22 @@ class Simulation:
         """Выполняет один временной шаг и сохраняет реактивный момент.
 
         Последовательность:
-            1. Обновить текущий угол лифтеров/барабана (если есть).
+            1. Продвинуть внутреннее время шага на ``config.dt`` и обновить
+               угол лифтеров/барабана (если есть).
             2. Пересчитать силы и касательные смещения для всех контактов.
             3. Сделать шаг Velocity Verlet (полушаг скоростей + позиции).
             4. Обнулить накопленные ``force``/``torque`` (для следующего шага).
             5. Снять показания реактивного момента с границ.
         """
-        current_time = self.time[-1] if self.time else 0.0
+        # Продвигаем внутреннее время так, чтобы лифтеры корректно вращались
+        # и при запуске через внешний цикл (run_simulation), и при прямом
+        # вызове step() в тестах. ``self.time`` остаётся историей для
+        # потребителей (графики, /partial_results).
+        if not hasattr(self, "_sim_time") or self._sim_time is None:
+            self._sim_time = 0.0
+        self._sim_time += self.config.dt
+        current_time = self._sim_time
+
         for b in self.boundaries:
             if hasattr(b, 'update_time'):
                 b.update_time(current_time)
@@ -148,20 +206,28 @@ class Simulation:
                 b.applied_torque = 0.0
                 
         self.torque_history.append(-total_torque)
+        self.time.append(current_time)
 
     def run(self):
         """Запускает симуляцию до достижения total_time."""
-        t = 0.0
+        # ``Simulation.step`` теперь сам управляет ``self._sim_time``
+        # и добавляет точку в ``self.time``. Здесь только выполняем цикл.
         self.time.clear()
+        if hasattr(self, "_sim_time"):
+            self._sim_time = 0.0
+        # Сбрасываем текущие углы лифтеров на base, чтобы первый шаг
+        # отсчитывал время от нуля заново.
+        for b in self.boundaries:
+            if hasattr(b, "base_angle"):
+                b.current_angle = b.base_angle
+                b._update_corners()
         self.torque_history.clear()
         step_count = 0
-        while t < self.config.total_time and not self.stop_requested:
+        while step_count * self.config.dt < self.config.total_time and not self.stop_requested:
             self.step()
-            self.time.append(t)
-            t += self.config.dt
             step_count += 1
             if step_count % 10 == 0:
-                print(f"Progress: {t / self.config.total_time * 100:.2f}%")
+                print(f"Progress: {(step_count * self.config.dt) / self.config.total_time * 100:.2f}%")
 
     def stop(self):
         """Запрашивает остановку симуляции."""
