@@ -16,12 +16,13 @@ class WallLine(Boundary):
         # Расстояние от центра частицы до линии (положительно – в сторону нормали)
         dist = np.dot(particle.pos - self.point, self.normal)
 
-        if dist > 0:
+        if dist >= particle.radius:
             return None  # нет контакта
 
         overlap = particle.radius - dist
         contact_point = particle.pos - dist * self.normal
-        normal_unit_vector = -self.normal
+        # Normal should point from wall toward particle (outward from wall)
+        normal_unit_vector = self.normal
         overlap_rate = np.dot(particle.vel, self.normal)
         tangential_velocity = particle.vel - overlap_rate * self.normal
 

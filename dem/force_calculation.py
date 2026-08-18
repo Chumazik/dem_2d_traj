@@ -169,7 +169,9 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel,
                 continue
 
             overlap, contact_point, normal, overlap_rate, tangential_velocity = coll
-            rel_vel_tang = float(np.dot(tangential_velocity, normal))
+            # Calculate tangential velocity component (dot product with tangent vector)
+            tangent_vector = np.array([-normal[1], normal[0]])
+            rel_vel_tang = float(np.dot(tangential_velocity, tangent_vector))
 
             contact_key = (p.id, boundary)
             if contact_key not in contacts:
@@ -186,7 +188,19 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel,
                 rel_vel_tang, p.radius, normal, p, None,
             )
 
-            p.apply_force(-fn_vec - ft_vec, torque_p)
+            # Calculate torque from tangential force (r × Ft)
+            torque_arm = contact_point - p.pos  # Vector from particle center to contact point
+            torque_from_friction = torque_arm[0] * ft_vec[1] - torque_arm[1] * ft_vec[0]
+            
+            # Apply forces: the normal force should push the particle away from the boundary
+            # For WallCircle: normal points outward from drum center, so -fn_vec pushes inward
+            # For WallLine: normal points into valid region, so fn_vec pushes away from wall
+            if isinstance(boundary, WallCircle):
+                # WallCircle normal points outward, so we need to reverse the normal force
+                p.apply_force(-fn_vec + ft_vec, torque_p + torque_from_friction)
+            else:
+                # WallLine normal points into valid region, so normal force is correct
+                p.apply_force(fn_vec + ft_vec, torque_p + torque_from_friction)
             if isinstance(boundary, WallCircle):
                 boundary.apply_driving_torque(torque_p)
 
