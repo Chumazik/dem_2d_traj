@@ -123,13 +123,22 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel,
     for p in particles:
         p.reset_force()
 
+    # Буфер касательного смещения, общий для Numba- и GPU-путей (накапливается
+    # между шагами, как в ContactModel.compute_forces). Хранится на contact_model,
+    # чтобы не терять состояние между вызовами step().
+    if not hasattr(contact_model, "tangential_disp") or contact_model.tangential_disp is None:
+        contact_model.tangential_disp = np.zeros((len(particles), len(particles)), dtype=np.float64)
+    elif contact_model.tangential_disp.shape != (len(particles), len(particles)):
+        contact_model.tangential_disp = np.zeros((len(particles), len(particles)), dtype=np.float64)
+    tangential_disp = contact_model.tangential_disp
+
     # --- Парные контакты: автовыбор GPU → Numba → Python ---
     if len(particles) >= 2:
         if _want_gpu(contact_model):
             try:
                 from . import gpu_backend
                 if gpu_backend.is_available():
-                    gpu_backend.compute_pairwise_forces_cupy(particles, contact_model)
+                    gpu_backend.compute_pairwise_forces_cupy(particles, contact_model, tangential_disp)
                     for i in range(len(particles)):
                         for j in range(i + 1, len(particles)):
                             key = (particles[i].id, particles[j].id)
@@ -138,7 +147,7 @@ def compute_all_forces(particles, boundaries, contact_model: ContactModel,
             except Exception:
                 if _want_jit(contact_model):
                     try:
-                        compute_pairwise_forces(particles, contact_model)
+                        compute_pairwise_forces(particles, contact_model, tangential_disp)
                         for i in range(len(particles)):
                             for j in range(i + 1, len(particles)):
                                 key = (particles[i].id, particles[j].id)
@@ -244,7 +253,7 @@ def compute_pairwise_forces(
         try:
             from . import gpu_backend
             if gpu_backend.is_available():
-                gpu_backend.compute_pairwise_forces_cupy(particles, contact_model)
+                gpu_backend.compute_pairwise_forces_cupy(particles, contact_model, tangential_disp)
                 return tangential_disp
         except Exception:
             # мягкий фолбэк
@@ -271,11 +280,13 @@ def _compute_pairwise_forces_numba(
     vel = np.empty((n, 2), dtype=np.float64)
     ang_vel = np.empty(n, dtype=np.float64)
     radius = np.empty(n, dtype=np.float64)
+    mass = np.empty(n, dtype=np.float64)
     for i, p in enumerate(particles):
         pos[i] = p.pos
         vel[i] = p.vel
         ang_vel[i] = p.ang_vel
         radius[i] = p.radius
+        mass[i] = p.mass
 
     force_out = np.zeros((n, 2), dtype=np.float64)
     torque_out = np.zeros(n, dtype=np.float64)
@@ -284,19 +295,18 @@ def _compute_pairwise_forces_numba(
         tangential_disp = np.zeros((n, n), dtype=np.float64)
 
     kn = float(contact_model.kn)
-    gamma_n = -2.0 * np.sqrt(kn * float(contact_model.restitution_coeff))
     kt = float(contact_model.kt)
-    gamma_t = gamma_n
+    restitution = float(contact_model.restitution_coeff)
     mu_s = float(contact_model.mu_s)
     mu_d = float(contact_model.mu_d)
     rf = float(contact_model.rolling_friction_coeff)
     dt = float(getattr(contact_model, "dt", 0.0) or 0.0)
 
     _nb_pairwise(
-        pos, vel, ang_vel, radius,
+        pos, vel, ang_vel, radius, mass,
         force_out, torque_out,
         tangential_disp,
-        kn, gamma_n, kt, gamma_t,
+        kn, kt, restitution,
         mu_s, mu_d, rf, dt,
     )
 

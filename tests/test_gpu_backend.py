@@ -67,7 +67,7 @@ class TestForceCalculationWithGpuMocked(unittest.TestCase):
         # Подсовываем фейковый gpu_backend, который помечает свой вызов в call_log
         fake_mod = types.ModuleType("dem.gpu_backend_fake_for_test")
         fake_mod.is_available = lambda: True
-        def fake_pairwise(particles, cm):
+        def fake_pairwise(particles, cm, tangential_disp=None):
             call_log.append("gpu_pairwise")
             # накапливаем фиктивную силу
             for p in particles:

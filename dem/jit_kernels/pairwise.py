@@ -1,5 +1,6 @@
 """Батчевое Numba-ядро для контактов частица‑частица."""
 
+import math
 import numpy as np
 from numba import njit, prange
 
@@ -10,13 +11,13 @@ def _pairwise_particle_forces(
     vel,             # (N, 2)
     ang_vel,         # (N,)
     radius,          # (N,)
+    mass,            # (N,)   – массы частиц (для эфф. массы демпфирования)
     force_out,       # (N, 2) – куда суммировать
     torque_out,      # (N,)   – куда суммировать
     tangential_disp, # (N, N) – накопительное касательное смещение
     kn,
-    gamma_n,
     kt,
-    gamma_t,
+    restitution,
     mu_s,
     mu_d,
     rolling_friction,
@@ -65,6 +66,18 @@ def _pairwise_particle_forces(
             tvx = rvx * (-ny) + rvy * nx
             td = tangential_disp[i, j] + tvx * dt
             tangential_disp[i, j] = td
+
+            # Демпфирование с учётом эффективной массы пары
+            # m_eff = mi*mj/(mi+mj), как в ContactModel._damping_coefficient.
+            m_eff = (mass[i] * mass[j]) / (mass[i] + mass[j])
+            if restitution <= 0.0:
+                gamma_n = -2.0 * math.sqrt(kn * m_eff)
+                gamma_t = -2.0 * math.sqrt(kt * m_eff)
+            else:
+                ln_e = math.log(restitution)
+                denom = math.sqrt(math.pi ** 2 + ln_e * ln_e)
+                gamma_n = -2.0 * ln_e * math.sqrt(kn * m_eff) / denom
+                gamma_t = -2.0 * ln_e * math.sqrt(kt * m_eff) / denom
 
             # нормальная сила
             fn_scalar = kn * overlap + gamma_n * overlap_rate

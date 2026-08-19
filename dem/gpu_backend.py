@@ -48,7 +48,7 @@ def import_error() -> Exception | None:
 # ---------------------------------------------------------------------------
 # Парные контактные силы
 # ---------------------------------------------------------------------------
-def compute_pairwise_forces_cupy(particles, contact_model) -> None:
+def compute_pairwise_forces_cupy(particles, contact_model, tangential_disp=None) -> None:
     """Батчевая парная нормальная+касательная сила + момент качения на GPU.
 
     Результат добавляется в ``particle.force`` / ``particle.torque`` каждой
@@ -68,6 +68,7 @@ def compute_pairwise_forces_cupy(particles, contact_model) -> None:
     vel = cp.empty((n, 2), dtype=cp.float64)
     ang_vel = cp.empty(n, dtype=cp.float64)
     radius = cp.empty(n, dtype=cp.float64)
+    mass = cp.empty(n, dtype=cp.float64)
     for i, p in enumerate(particles):
         pos[i, 0] = float(p.pos[0])
         pos[i, 1] = float(p.pos[1])
@@ -75,6 +76,7 @@ def compute_pairwise_forces_cupy(particles, contact_model) -> None:
         vel[i, 1] = float(p.vel[1])
         ang_vel[i] = float(p.ang_vel)
         radius[i] = float(p.radius)
+        mass[i] = float(p.mass)
 
     # Попарные смещения
     dx = pos[:, 0][:, None] - pos[:, 0][None, :]
@@ -86,50 +88,101 @@ def compute_pairwise_forces_cupy(particles, contact_model) -> None:
 
     overlap = rsum - dist
     mask = (overlap > 0.0) & (dist2 > 0.0) & (cp.arange(n)[:, None] < cp.arange(n)[None, :])
-    # mask[j,i] = True означает что j>i и есть контакт
+    # mask[i,j] = True означает что i<j и есть контакт
 
+    # Единичный нормальный вектор (i->j), как в CPU-ядре (delta/dist)
     nx = cp.where(mask, dx * inv_dist, 0.0)
     ny = cp.where(mask, dy * inv_dist, 0.0)
 
-    rel_vx = vel[:, 0][:, None] - vel[:, 0][None, :]
-    rel_vy = vel[:, 1][:, None] - vel[:, 1][None, :]
-    overlap_rate = rel_vx * nx + rel_vy * ny
+    # Относительная скорость j - i
+    rel_vx = vel[:, 0][None, :] - vel[:, 0][:, None]
+    rel_vy = vel[:, 1][None, :] - vel[:, 1][:, None]
+    overlap_rate = rel_vx * nx + rel_vy * ny  # матрица (i,j)
+
+    # Касательный вектор t = (-ny, nx); касательная скорость v_t = rel·t
+    tvx = rel_vx * (-ny) + rel_vy * nx
 
     kn = float(contact_model.kn)
+    kt = float(contact_model.kt)
     e = float(contact_model.restitution_coeff)
-    gamma_n = -2.0 * math.sqrt(kn * e)
+    mu_s = float(contact_model.mu_s)
+    mu_d = float(contact_model.mu_d)
+    mu_r = float(contact_model.rolling_friction_coeff)
+    dt = float(getattr(contact_model, "dt", 0.0) or 0.0)
+
+    # Эффективная масса пары m_eff = mi*mj/(mi+mj) (как в ContactModel /
+    # CPU-Numba ядре). Защита от деления на ноль.
+    m_eff = (mass[:, None] * mass[None, :]) / cp.where(
+        (mass[:, None] + mass[None, :]) > 0.0,
+        (mass[:, None] + mass[None, :]), 1.0)
+
+    # Демпфирование с учётом эффективной массы (Cundall & Strack), идентично
+    # ContactModel._damping_coefficient. Если e<=0 — критическое демпфирование.
+    if e <= 0.0:
+        gamma_n = -2.0 * cp.sqrt(kn * m_eff)
+        gamma_t = -2.0 * cp.sqrt(kt * m_eff)
+    else:
+        ln_e = math.log(e)
+        denom = math.sqrt(math.pi ** 2 + ln_e * ln_e)
+        gamma_n = -2.0 * ln_e * cp.sqrt(kn * m_eff) / denom
+        gamma_t = -2.0 * ln_e * cp.sqrt(kt * m_eff) / denom
 
     fn_scalar = kn * overlap + gamma_n * overlap_rate
-    # Только для активных контактов; обнуляем неактивные ячейки
-    fn_scalar = cp.where(mask, fn_scalar, 0.0)
+    fnx = fn_scalar * nx
+    fny = fn_scalar * ny
 
-    # Силы: на i действует -fn_x, на j — +fn_x (симметрия). Поскольку маска bx<by (i<j),
-    # то для частицы с меньшим i: берем сумму по j>i со знаком + для f, на j<i со знаком -.
-    # Проще: для каждого i просуммировать с разными знаками для i<j и i>j.
-    # Тут: fn[j,i] — это пара выше диагонали, для i<j → +fn на j => суммируем
-    # по i (i меньше) -> -fn, по j (j больше) -> +fn. Симметричная матрица mat,
-    # и сумма по строкам и столбцам.
-    force_x = -fn_scalar * nx  # для частицы в строке i (где i<j) сила -fn
-    # Расширить симметрично:
-    force_x_full = force_x - force_x.T  # (i,j): (j>i) -fn, (i>j) +fn
-    force_y_full = (-fn_scalar * ny) - (-fn_scalar * ny).T
-
-    # Rolling friction (sideways)
-    mu_r = float(contact_model.rolling_friction_coeff)
-    if mu_r != 0.0 and n >= 2:
-        omega_rel = ang_vel[:, None] - ang_vel[None, :]
-        r_eff = (
-            radius[:, None] * radius[None, :]
-            / cp.where((radius[:, None] + radius[None, :]) > 0,
-                       radius[:, None] + radius[None, :], 1.0)
-        )
-        sign_om = cp.sign(omega_rel)
-        roll_torque = -mu_r * cp.abs(fn_scalar) * r_eff * sign_om
-        roll_torque = cp.where(mask, roll_torque, 0.0)
-        # Для пары (i,j) с i<j: на i действует +roll_torque[i,j], на j — -roll_torque[i,j]
-        torque_full = roll_torque - roll_torque.T
+    # Касательное смещение накапливается как v_t * dt (как в CPU-ядре).
+    # Используем кумулятивный буфер, переданный вызывающей стороной (numpy),
+    # конвертируем в cupy, обновляем и пишем обратно.
+    if tangential_disp is not None:
+        td = cp.asarray(np.asarray(tangential_disp, dtype=cp.float64))
+        td_update = td + tvx * dt
     else:
-        torque_full = cp.zeros((n, n), dtype=cp.float64)
+        td = cp.zeros((n, n), dtype=cp.float64)
+        td_update = tvx * dt
+
+    # ft_trial = -kt*td - gamma_t*v_t, Кулоновский предел mu*|Fn|
+    abs_fn = cp.abs(fn_scalar)
+    ft_trial = -kt * td_update - gamma_t * tvx
+    mu_abs = mu_s * abs_fn
+    ft_scalar = cp.where(
+        ft_trial > mu_abs,
+        -mu_d * abs_fn,
+        cp.where(ft_trial < -mu_abs, mu_d * abs_fn, ft_trial),
+    )
+
+    # Касательный вектор для силы: f_t = ft * (-ny, nx) -> на i действует -ft_vec,
+    # на j — +ft_vec (как в CPU-ядре).
+    ftx = -ft_scalar * ny
+    fty = ft_scalar * nx
+
+    # Силы на i от контакта (i<j): -fn - ft ; на j: +fn + ft.
+    # Матрица выше диагонали (i<j) даёт на i: -(fnx+ftx), на j: +(fnx+ftx).
+    force_x_mat = -(fnx + ftx)  # для i<j действует на i
+    force_y_mat = -(fny + fty)
+    # Симметрично раскрываем: полная матрица = M - M.T
+    force_x_full = force_x_mat - force_x_mat.T
+    force_y_full = force_y_mat - force_y_mat.T
+
+    # Момент качения: r_eff = ri*rj/(ri+rj), omega_rel = ang_i - ang_j
+    r_eff = (
+        radius[:, None] * radius[None, :]
+        / cp.where((radius[:, None] + radius[None, :]) > 0.0,
+                   radius[:, None] + radius[None, :], 1.0)
+    )
+    omega_rel = ang_vel[:, None] - ang_vel[None, :]
+    sign_om = cp.sign(omega_rel)
+    roll_torque = -mu_r * abs_fn * r_eff * sign_om  # на i, для i<j
+    torque_full = roll_torque - roll_torque.T
+
+    # Обнуляем неактивные контакты
+    force_x_full = cp.where(mask, force_x_full, 0.0)
+    force_y_full = cp.where(mask, force_y_full, 0.0)
+    torque_full = cp.where(mask, torque_full, 0.0)
+
+    # Записываем обновлённое касательное смещение обратно (если буфер передан)
+    if tangential_disp is not None:
+        np.asarray(tangential_disp)[:] = cp.asnumpy(td_update)
 
     force_x_sum = force_x_full.sum(axis=1)
     force_y_sum = force_y_full.sum(axis=1)

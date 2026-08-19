@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from typing import Optional, Tuple
 
@@ -41,6 +42,26 @@ class ContactModel:
         self.dt = dt if dt is not None else 0.0
         self.config = config   # <-- сохраняем конфигурацию
 
+    @staticmethod
+    def _damping_coefficient(kn: float, restitution_coeff: float,
+                            mass_eff: float) -> float:
+        """Физически корректный коэффициент демпфирования (Cundall & Strack).
+
+        gamma_n = -2 * ln(e) * sqrt(kn * m_eff) / sqrt(pi^2 + ln(e)^2)
+
+        Учитывает эффективную массу контакта ``m_eff`` (для частица-частица
+        m_eff = m1*m2/(m1+m2), для частица-стенка m_eff = m), что делает
+        реальный коэффициент восстановления близким к ``restitution_coeff``.
+        Старый вариант ``-2*sqrt(kn*e)`` игнорировал массу и давал сильно
+        недодемпфированный контакт (фактическое e превышало заданное).
+        """
+        if restitution_coeff <= 0.0:
+            # Абсолютно неупругий: максимальное критическое демпфирование.
+            return -2.0 * math.sqrt(kn * mass_eff)
+        ln_e = math.log(restitution_coeff)
+        denom = math.sqrt(math.pi ** 2 + ln_e ** 2)
+        return -2.0 * ln_e * math.sqrt(kn * mass_eff) / denom
+
     def compute_forces(self,
                        overlap: float,
                        overlap_rate: float,
@@ -58,8 +79,14 @@ class ContactModel:
             rolling_torque_on_particle2 (0, если граница)
         """
         # ---------- Нормальная сила ----------
-        gamma_n = -2 * np.sqrt(self.kn * self.restitution_coeff)
-        gamma_t = gamma_n
+        # Эффективная масса контакта: для частица-частица m_eff = m1*m2/(m1+m2),
+        # для частица-стенка m_eff = m1 (стенка бесконечно массивна).
+        if particle2 is not None:
+            m_eff = (particle1.mass * particle2.mass) / (particle1.mass + particle2.mass)
+        else:
+            m_eff = particle1.mass
+        gamma_n = self._damping_coefficient(self.kn, self.restitution_coeff, m_eff)
+        gamma_t = self._damping_coefficient(self.kt, self.restitution_coeff, m_eff)
 
         fn_scalar = self.kn * overlap + gamma_n * overlap_rate
         normal_force_vector = fn_scalar * normal_unit_vector
