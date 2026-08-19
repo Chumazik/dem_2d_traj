@@ -19,12 +19,13 @@
 from __future__ import annotations
 
 import numpy as np
-from typing import Optional
+from typing import Optional, Dict, List
 
 from .contact_model import ContactModel, Contact
 from .geometry import WallCircle  # Добавлено импорт WallCircle
 from .jit_kernels.pairwise import _pairwise_particle_forces as _nb_pairwise
 from .jit_kernels.integrator import _velocity_verlet_step as _nb_verlet
+from .spatial_grid import create_spatial_grid, SpatialGrid
 
 
 # ---------------------------------------------------------------------------
@@ -49,24 +50,36 @@ def _want_jit(contact_model: ContactModel) -> bool:
 # CPU / чистый Python (обратная совместимость)
 # ---------------------------------------------------------------------------
 def _pairwise_python_loop(particles, contact_model: ContactModel,
-                          contacts=None) -> None:
-    """O(N²) чистый Python — для пар без GPU/Numba."""
-    n = len(particles)
+                           contacts=None) -> None:
+    """O(N) чистый Python с пространственным хешированием — для пар без GPU/Numba."""
     if contacts is None:
         contacts = {}
-
-    for i in range(n):
-        pi = particles[i]
-        for j in range(i + 1, n):
-            pj = particles[j]
+    
+    # Создаем пространственную сетку для ускорения поиска контактов
+    grid = create_spatial_grid(particles, particles[0].radius if particles else 0.05)
+    
+    for i, pi in enumerate(particles):
+        # Получаем только частицы из соседних ячеек
+        neighbors = grid.get_neighboring_particles(pi)
+        
+        for pj in neighbors:
+            # Избегаем проверки частицы с самой собой и дубликатов (i < j)
+            if pj.id <= pi.id:
+                continue
+                
             delta = pj.pos - pi.pos
-            dist = np.linalg.norm(delta)
+            dist = float(np.linalg.norm(delta))
 
             if dist >= pi.radius + pj.radius:
                 continue
 
             overlap = pi.radius + pj.radius - dist
-            normal = delta / dist if dist != 0 else np.array([1.0, 0.0])
+            if dist == 0.0:
+                normal = np.array([1.0, 0.0])
+                inv_dist = 0.0
+            else:
+                normal = delta / dist
+                inv_dist = 1.0 / dist
 
             rel_vel = pj.vel - pi.vel
             overlap_rate = float(np.dot(rel_vel, normal))
@@ -238,7 +251,7 @@ def compute_pairwise_forces(
     * ``use_gpu=True`` + доступный CuPy → :func:`dem.gpu_backend.compute_pairwise_forces_cupy`;
     * иначе + ``use_jit=True`` (по умолчанию) → Numba-ядро
       :func:`dem.jit_kernels.pairwise._pairwise_particle_forces`;
-    * иначе → чистый Python O(N²).
+    * иначе → чистый Python O(N) с пространственным хешированием.
 
     Поля ``force``/``torque`` частиц должны быть обнулены до вызова.
     Возвращает обновлённый массив ``tangential_disp``.
@@ -246,13 +259,72 @@ def compute_pairwise_forces(
     if not particles:
         return tangential_disp
 
-    n = len(particles)
+    # Для небольшого числа частиц (N < 100) используем O(N²) напрямую
+    # для лучшей производительности (меньше накладных расходов на сетку)
+    if len(particles) < 100:
+        # ---- GPU (CuPy) ----
+        if _want_gpu(contact_model):
+            try:
+                from . import gpu_backend
+                if gpu_backend.is_available():
+                    gpu_backend.compute_pairwise_forces_cupy(particles, contact_model, tangential_disp)
+                    return tangential_disp
+            except Exception:
+                # мягкий фолбэк
+                pass
+
+        # ---- Numba / batch ----
+        if _want_jit(contact_model):
+            try:
+                return _compute_pairwise_forces_numba(particles, contact_model, tangential_disp)
+            except Exception:
+                # мягкий фолбэк
+                pass
+
+        # ---- Чистый Python ----
+        return _compute_pairwise_forces_python(particles, contact_model, tangential_disp)
+    
+    # Для большого числа частиц (N >= 100) используем пространственное хеширование
+    # в чистом Python пути, а для GPU/Numba используем полные массивы
+    # так как они оптимизированы для батчевой обработки
+    
+    # ---- GPU и Numba пути используют полные массивы ----
+    if _want_gpu(contact_model) or _want_jit(contact_model):
+        # Для GPU и Numba используем существующий код без изменений
+        if _want_gpu(contact_model):
+            try:
+                from . import gpu_backend
+                if gpu_backend.is_available():
+                    gpu_backend.compute_pairwise_forces_cupy(particles, contact_model, tangential_disp)
+                    return tangential_disp
+            except Exception:
+                pass
+        
+        if _want_jit(contact_model):
+            try:
+                return _compute_pairwise_forces_numba(particles, contact_model, tangential_disp)
+            except Exception:
+                pass
+    
+    # ---- Чистый Python путь использует пространственное хеширование ----
+    return _compute_pairwise_forces_python(particles, contact_model, tangential_disp)
+    
+    # Параметры контактной модели
+    kn = float(contact_model.kn)
+    kt = float(contact_model.kt)
+    restitution = float(contact_model.restitution_coeff)
+    mu_s = float(contact_model.mu_s)
+    mu_d = float(contact_model.mu_d)
+    rf = float(contact_model.rolling_friction_coeff)
+    dt = float(getattr(contact_model, "dt", 0.0) or 0.0)
 
     # ---- GPU (CuPy) ----
     if _want_gpu(contact_model):
         try:
             from . import gpu_backend
             if gpu_backend.is_available():
+                # Для GPU используем полный массив частиц, так как GPU ядро
+                # ожидает полный набор данных для батчевой обработки
                 gpu_backend.compute_pairwise_forces_cupy(particles, contact_model, tangential_disp)
                 return tangential_disp
         except Exception:
@@ -262,12 +334,15 @@ def compute_pairwise_forces(
     # ---- Numba / batch ----
     if _want_jit(contact_model):
         try:
+            # Для Numba используем полный набор данных, так как ядро оптимизировано
+            # для полной матрицы контактов и использует prange для параллелизма
             return _compute_pairwise_forces_numba(particles, contact_model, tangential_disp)
         except Exception:
             # мягкий фолбэк
             pass
 
     # ---- Чистый Python ----
+    # Для чистого Python уже используется пространственное хеширование в _pairwise_python_loop
     return _compute_pairwise_forces_python(particles, contact_model, tangential_disp)
 
 
