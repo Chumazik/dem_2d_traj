@@ -67,17 +67,13 @@ def velocity_verlet_step(particles, dt, contact_model, boundaries):
         try:
             from . import gpu_backend
             if gpu_backend.is_available():
-                # Первый полушаг (vel) + позиции делает GPU.
-                gpu_backend.velocity_verlet_step_cupy(particles, dt)
-                # Пересчёт сил (Numba/GPU/CPU для пар + CPU для границ) и второй полушаг.
-                for p in particles:
-                    p.reset_force()
-                compute_all_forces(particles, boundaries, contact_model)
-                for p in particles:
-                    a = p.force / p.mass
-                    alpha = p.torque / p.inertia
-                    p.vel += 0.5 * a * dt
-                    p.ang_vel += 0.5 * alpha * dt
+                # Получаем постоянное состояние GPU
+                gpu_state = gpu_backend._get_gpu_state(particles, contact_model)
+                
+                # Выполняем полный шаг на GPU (силы + интеграция)
+                gpu_state.step(particles, sync_every=1)  # Синхронизируем каждый шаг
+                
+                # Обновляем историю
                 for p in particles:
                     p.update_history()
                 return
