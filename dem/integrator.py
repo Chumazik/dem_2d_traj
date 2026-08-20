@@ -82,23 +82,37 @@ def velocity_verlet_step(particles, dt, contact_model, boundaries):
             pass
 
     if use_jit:
-        try:
-            pos, vel, ang_vel, force, torque, mass, inertia = _pack_state(particles)
-            _velocity_verlet_step(pos, vel, ang_vel, force, torque, mass, inertia, dt)
-            _unpack_state(particles, pos, vel, ang_vel)
-            for p in particles:
-                p.reset_force()
-            compute_all_forces(particles, boundaries, contact_model)
-            for p in particles:
-                a = p.force / p.mass
-                alpha = p.torque / p.inertia
-                p.vel += 0.5 * a * dt
-                p.ang_vel += 0.5 * alpha * dt
-            for p in particles:
-                p.update_history()
-            return
-        except Exception:
-            pass
+          try:
+              # Первый полушаг скоростей (использует текущие силы)
+              for p in particles:
+                  a = p.force / p.mass
+                  alpha = p.torque / p.inertia
+                  p.vel += 0.5 * a * dt
+                  p.ang_vel += 0.5 * alpha * dt
+              
+              # Обновление позиций
+              for p in particles:
+                  p.pos += p.vel * dt
+              
+              # Сброс сил и пересчёт
+              for p in particles:
+                  p.reset_force()
+              
+              compute_all_forces(particles, boundaries, contact_model)
+              
+              # Второй полушаг скоростей
+              for p in particles:
+                  a = p.force / p.mass
+                  alpha = p.torque / p.inertia
+                  p.vel += 0.5 * a * dt
+                  p.ang_vel += 0.5 * alpha * dt
+              
+              # Обновление истории
+              for p in particles:
+                  p.update_history()
+              return
+          except Exception:
+              pass
 
     # ----- Python-путь -----
     for p in particles:

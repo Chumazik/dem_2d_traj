@@ -25,12 +25,12 @@ class SimulationConfig:
     lifter_height: float = 0.0              # м (высота лифтера, 0 - нет лифтеров)
     lifter_width: float = 0.02              # м (ширина лифтера)
     num_lifters: int = 0                    # количество лифтеров
-      dt: float = 1e-5                       # Начальный шаг (используется если adaptive_dt=False), с
-      dt_min: float = 1e-6                   # Минимальный шаг при адаптивном dt, с
-      dt_max: float = 1e-4                   # Максимальный шаг при адаптивном dt, с
-      output_dt: float = 1e-3                # Шаг вывода результатов (анимация, графики), с
-      adaptive_dt: bool = True               # Использовать адаптивный шаг
-      cfl_factor: float = 0.2                # Коэффициент безопасности для критерия Куранта
+    dt: float = 1e-5                       # Начальный шаг (используется если adaptive_dt=False), с
+    dt_min: float = 1e-6                   # Минимальный шаг при адаптивном dt, с
+    dt_max: float = 1e-4                   # Максимальный шаг при адаптивном dt, с
+    output_dt: float = 1e-3                # Шаг вывода результатов (анимация, графики), с
+    adaptive_dt: bool = True               # Использовать адаптивный шаг
+    cfl_factor: float = 0.2                # Коэффициент безопасности для критерия Куранта
     total_time: float = 5.0                # с
     use_jit: bool = True                   # Numba-JIT интегратор (иначе чистый Python)
     use_gpu: bool = False                  # GPU (CuPy) для парных контактов и Verlet (фолбэк: Numba → CPU)

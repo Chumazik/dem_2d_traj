@@ -204,20 +204,20 @@ class Simulation:
         """Выполняет один временной шаг и сохраняет реактивный момент.
 
         Последовательность:
-            1. Продвинуть внутреннее время шага на ``config.dt`` и обновить
-               угол лифтеров/барабана (если есть).
-            2. Пересчитать силы и касательные смещения для всех контактов.
-            3. Сделать шаг Velocity Verlet (полушаг скоростей + позиции).
-            4. Обнулить накопленные ``force``/``torque`` (для следующего шага).
-            5. Снять показания реактивного момента с границ.
+            1. Продвинуть внутреннее время и обновить угол лифтеров/барабана.
+            2. При адаптивном dt: вычислить оптимальный шаг по критерию Куранта.
+            3. Пересчитать силы и касательные смещения для всех контактов.
+            4. Сделать шаг Velocity Verlet.
+            5. Обнулить накопленные ``force``/``torque``.
+            6. Снять показания реактивного момента с границ.
         """
-        # Продвигаем внутреннее время так, чтобы лифтеры корректно вращались
-        # и при запуске через внешний цикл (run_simulation), и при прямом
-        # вызове step() в тестах. ``self.time`` остаётся историей для
-        # потребителей (графики, /partial_results).
+        # Вычисляем текущий шаг dt (адаптивный или фиксированный)
+        dt = self._compute_adaptive_dt()
+        
+        # Продвигаем внутреннее время
         if not hasattr(self, "_sim_time") or self._sim_time is None:
             self._sim_time = 0.0
-        self._sim_time += self.config.dt
+        self._sim_time += dt
         current_time = self._sim_time
 
         for b in self.boundaries:
@@ -229,7 +229,7 @@ class Simulation:
         )
 
         velocity_verlet_step(
-            self.particles, self.config.dt, self.contact_model, self.boundaries
+            self.particles, dt, self.contact_model, self.boundaries
         )
 
         # Внутреннее время было уже продвинуто выше; синхронизируем момент
@@ -265,12 +265,16 @@ class Simulation:
         self.max_velocity_history.append(max_v)
 
     def run(self):
-        """Запускает симуляцию до достижения total_time."""
-        # ``Simulation.step`` теперь сам управляет ``self._sim_time``
-        # и добавляет точку в ``self.time``. Здесь только выполняем цикл.
+        """Запускает симуляцию до достижения total_time.
+        
+        Использует output_dt для определения шага вывода результатов,
+        а не фиксированный шаг симуляции. При адаптивном dt шаг симуляции
+        может меняться, но результаты сохраняются с частотой output_dt.
+        """
         self.time.clear()
         if hasattr(self, "_sim_time"):
             self._sim_time = 0.0
+        
         # Сбрасываем текущие углы лифтеров на base, чтобы первый шаг
         # отсчитывал время от нуля заново.
         for b in self.boundaries:
@@ -278,16 +282,85 @@ class Simulation:
                 b.current_angle = b.base_angle
                 b._update_corners()
         self.torque_history.clear()
-        step_count = 0
-        while step_count * self.config.dt < self.config.total_time and not self.stop_requested:
+        self.max_force_history.clear()
+        self.max_velocity_history.clear()
+        
+        # Начальное время для вывода
+        next_output_time = 0.0
+        
+        while self._sim_time < self.config.total_time and not self.stop_requested:
+            # Выполняем шаг симуляции
             self.step()
-            step_count += 1
-            if step_count % 10 == 0:
-                print(f"Progress: {(step_count * self.config.dt) / self.config.total_time * 100:.2f}%")
+            
+            # Сохраняем результаты с частотой output_dt
+            if self._sim_time >= next_output_time:
+                # Мгновенные показатели нагрузки и скорости
+                if self.particles:
+                    max_f = max(
+                        (float(p.force[0]) ** 2 + float(p.force[1]) ** 2) ** 0.5
+                        for p in self.particles
+                    )
+                    max_v = max(
+                        (float(p.vel[0]) ** 2 + float(p.vel[1]) ** 2) ** 0.5
+                        for p in self.particles
+                    )
+                else:
+                    max_f = 0.0
+                    max_v = 0.0
+                
+                self.torque_history.append(-sum(
+                    b.applied_torque for b in self.boundaries if hasattr(b, 'applied_torque')
+                ))
+                self.max_force_history.append(max_f)
+                self.max_velocity_history.append(max_v)
+                self.time.append(self._sim_time)
+                
+                # Следующее время вывода
+                next_output_time = min(
+                    self._sim_time + self.config.output_dt,
+                    self.config.total_time
+                )
+                
+                # Прогресс
+                progress = self._sim_time / self.config.total_time * 100
+                print(f"Progress: {progress:.2f}% (t={self._sim_time:.4f}s, dt={self.contact_model.dt:.2e}s)")
 
     def stop(self):
         """Запрашивает остановку симуляции."""
         self.stop_requested = True
+
+    def _compute_adaptive_dt(self) -> float:
+        """Вычисляет адаптивный шаг по критерию Куранта."""
+        if not self.config.adaptive_dt:
+            return self.config.dt
+            
+        # Вычисляем максимальные скорости и ускорения
+        max_vel = 0.0
+        max_acc = 0.0
+        r = self.config.particle_radius
+        
+        for p in self.particles:
+            vel_norm = float(np.linalg.norm(p.vel))
+            acc_norm = float(np.linalg.norm(p.force) / p.mass)
+            
+            if vel_norm > max_vel:
+                max_vel = vel_norm
+            if acc_norm > max_acc:
+                max_acc = acc_norm
+        
+        # Критерий Куранта для DEM: dt < CFL * min(r/v, sqrt(r/a))
+        # Добавляем малые значения для избежания деления на ноль
+        dt_vel = r / (max_vel + 1e-10)
+        dt_acc = np.sqrt(r / (max_acc + 1e-10))
+        dt_new = self.config.cfl_factor * min(dt_vel, dt_acc)
+        
+        # Ограничиваем шаг в заданных пределах
+        dt = min(self.config.dt_max, max(self.config.dt_min, dt_new))
+        
+        # Обновляем dt в контактной модели для согласованности
+        self.contact_model.dt = dt
+        
+        return dt
 
     def get_trajectories(self):
         """Возвращает список историй всех частиц."""

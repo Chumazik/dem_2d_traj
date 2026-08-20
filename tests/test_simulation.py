@@ -94,7 +94,9 @@ class TestSimulation(unittest.TestCase):
         for _ in range(50):
             sim.step()
         # Угол должен продвинуться вперёд (omega*dt*N).
-        expected = base0 + 2.0 * 1e-5 * 50
+        # При адаптивном dt используем фактическое время симуляции
+        actual_time = sim._sim_time
+        expected = base0 + 2.0 * actual_time
         self.assertAlmostEqual(lifters[0].current_angle, expected, places=7)
 
     def test_max_force_and_velocity_histories_are_recorded_per_step(self):
